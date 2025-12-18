@@ -121,6 +121,11 @@ let gridSettings = {
 
 // Preview mode
 let previewMode = false;
+let previewSavedState = {
+	showShapes: false,
+	showNames: true,
+	showOffscreen: false
+};
 
 // Drag state
 let dragState = {
@@ -2186,12 +2191,53 @@ function togglePreviewMode() {
 	previewMode = !previewMode;
 	document.body.classList.toggle('preview-mode', previewMode);
 
+	const shapesChk = document.getElementById('chk-show-shapes');
+	const namesChk = document.getElementById('chk-show-names');
+	const offscreenChk = document.getElementById('chk-show-offscreen');
+	const screenpad = document.getElementById('screenpad');
+
 	if (previewMode) {
 		previewModeEnteredAt = Date.now();
+
+		// Save current view states
+		previewSavedState.showShapes = shapesChk.checked;
+		previewSavedState.showNames = namesChk.checked;
+		previewSavedState.showOffscreen = offscreenChk.checked;
+
+		// Turn off overlays for clean preview
+		shapesChk.checked = false;
+		screenpad.classList.remove('show-borders');
+
+		namesChk.checked = false;
+		screenpad.classList.add('hide-names');
+
+		offscreenChk.checked = false;
+		screenpad.classList.remove('show-offscreen');
+		screenpad.classList.add('hide-offscreen');
+
 		screen.scale = 1;
 		setScreenDimensions();
 		redrawPad();
 	} else {
+		// Restore view states
+		shapesChk.checked = previewSavedState.showShapes;
+		if (previewSavedState.showShapes) {
+			screenpad.classList.add('show-borders');
+		}
+
+		namesChk.checked = previewSavedState.showNames;
+		if (previewSavedState.showNames) {
+			screenpad.classList.remove('hide-names');
+		} else {
+			screenpad.classList.add('hide-names');
+		}
+
+		offscreenChk.checked = previewSavedState.showOffscreen;
+		if (previewSavedState.showOffscreen) {
+			screenpad.classList.add('show-offscreen');
+			screenpad.classList.remove('hide-offscreen');
+		}
+
 		// Restore grid if it was enabled
 		updateGridOverlay();
 	}
