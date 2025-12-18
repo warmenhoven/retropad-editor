@@ -683,3 +683,74 @@ body.preview-mode {
 		order: 1;
 	}
 }
+
+/* GitHub Overlay Browser */
+.github-overlay-browser {
+	min-width: 350px;
+	max-width: 500px;
+}
+
+#github-browser-tree {
+	max-height: 50vh;
+	overflow-y: auto;
+	font-family: monospace;
+	font-size: 0.9em;
+	margin-top: 1vh;
+}
+
+#github-browser-status {
+	padding: 4px 0;
+	color: #06b;
+}
+
+#github-browser-status.github-browser-error {
+	color: #c00;
+}
+
+.github-tree-folder {
+	cursor: pointer;
+	padding: 6px 8px;
+	border-radius: 3px;
+}
+
+.github-tree-folder:hover {
+	background-color: #f0f0f5;
+}
+
+.github-tree-folder::before {
+	content: '📁 ';
+}
+
+.github-tree-folder.expanded::before {
+	content: '📂 ';
+}
+
+.github-tree-file {
+	cursor: pointer;
+	padding: 6px 8px 6px 24px;
+	border-radius: 3px;
+}
+
+.github-tree-file:hover {
+	background-color: #e0e8f0;
+}
+
+.github-tree-file::before {
+	content: '📄 ';
+}
+
+.github-tree-children {
+	margin-left: 16px;
+	border-left: 1px solid #ddd;
+}
+
+.github-tree-loading,
+.github-tree-error {
+	padding: 6px 8px 6px 24px;
+	color: #888;
+	font-style: italic;
+}
+
+.github-tree-error {
+	color: #c00;
+}

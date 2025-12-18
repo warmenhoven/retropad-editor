@@ -280,8 +280,11 @@ function createPadView() {
 		let r = rects[i];
 		let b = createRect(background, r.command, r.x, r.y, r.w, r.h, r.pct);
 
-		if (r.img)
-			b.style['background-image'] = 'url(' + images[r.img] + ')';
+		if (r.img) {
+			// Try to resolve image: local images object first, then use getImageDisplayUrl
+			const imgUrl = images[r.img] || images[r.img.split('/').pop()] || getImageDisplayUrl(r.img);
+			b.style['background-image'] = 'url(' + imgUrl + ')';
+		}
 
 		if (r.s == 'radial')
 			b.classList.add('radial');
@@ -506,7 +509,9 @@ function createPadBackground() {
 
 	let bg = conf.getCurrentOverlayBackground();
 	if (bg.image) {
-		backgroundDiv.style['background-image'] = 'url(' + images[bg.image] + ')';
+		// Try to resolve image: local images object first, then filename, then URL
+		const imgUrl = images[bg.image] || images[bg.image.split('/').pop()] || getImageDisplayUrl(bg.image);
+		backgroundDiv.style['background-image'] = 'url(' + imgUrl + ')';
 	}
 
 	if (bg.position) {
@@ -1115,16 +1120,18 @@ function fillButtonEditor(command, shape, image, addLines) {
 }
 
 
-function fillImageSelector() {
+async function fillImageSelector() {
 	let selector = document.getElementById('image-select');
-	selector.innerHTML = '';
+	selector.innerHTML = '<option value="">(loading...)</option>';
 
 	userImages.sort();
 
+	// Start with user-uploaded images
 	let listAll = [];
 	if (userImages.length > 0)
 		listAll = listAll.concat(userImages);
 
+	// Add locally bundled images
 	let defImages = [''];
 	for (let f in images)
 		if (!userImages.includes(f))
@@ -1132,8 +1139,29 @@ function fillImageSelector() {
 
 	listAll = listAll.concat(defImages);
 
+	// Try to fetch common-overlays images from GitHub
+	try {
+		const remoteImages = await fetchGitHubImageList();
+		if (remoteImages && remoteImages.length > 0) {
+			// Add any images from common-overlays that we don't already have
+			for (const img of remoteImages) {
+				if (!listAll.includes(img)) {
+					listAll.push(img);
+				}
+			}
+		}
+	} catch (e) {
+		console.warn('Could not fetch common-overlays images:', e);
+	}
+
+	// Sort (keeping empty string first)
+	const emptyFirst = listAll.filter(x => x === '');
+	const rest = listAll.filter(x => x !== '').sort();
+	listAll = emptyFirst.concat(rest);
+
+	selector.innerHTML = '';
 	for (let name of listAll) {
-		o = document.createElement('OPTION');
+		let o = document.createElement('OPTION');
 		o.appendChild(document.createTextNode(name));
 		selector.appendChild(o);
 	}
@@ -1373,7 +1401,8 @@ function showDialog(elementId, isShow) {
 
 
 function showImagePreview(imgName) {
-	let image = images[imgName];
+	// Try to resolve image: local images object first, then filename, then URL
+	let image = images[imgName] || images[imgName?.split('/').pop()] || (imgName ? getImageDisplayUrl(imgName) : null);
 	let gradient = 'linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 80%, #aac 90%)';
 	let box = document.getElementById('image-name');
 
@@ -2200,3 +2229,264 @@ function updateAlignmentToolsVisibility() {
 
 // Initialize keyboard shortcuts on load
 initKeyboardShortcuts();
+
+// ==================== COMMON-OVERLAYS INTEGRATION ====================
+
+const GITHUB_API_BASE = 'https://api.github.com/repos/libretro/common-overlays/contents';
+const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/libretro/common-overlays/master';
+
+// In-memory cache for GitHub data (session only)
+let githubCache = {
+	directories: {},
+	imageList: null
+};
+
+// Fetch directory listing from GitHub API
+async function fetchGitHubDirectory(path) {
+	const cacheKey = path || 'root';
+	if (githubCache.directories[cacheKey]) {
+		return githubCache.directories[cacheKey];
+	}
+
+	try {
+		const url = path ? `${GITHUB_API_BASE}/${path}` : GITHUB_API_BASE;
+		const response = await fetch(url);
+
+		if (!response.ok) {
+			throw new Error(`GitHub API error: ${response.status}`);
+		}
+
+		const data = await response.json();
+		const items = data.map(item => ({
+			name: item.name,
+			path: item.path,
+			type: item.type // 'file' or 'dir'
+		}));
+
+		githubCache.directories[cacheKey] = items;
+		return items;
+	} catch (error) {
+		console.error('Failed to fetch GitHub directory:', error);
+		return null;
+	}
+}
+
+// Fetch raw file content from GitHub
+async function fetchGitHubFile(path) {
+	try {
+		const url = `${GITHUB_RAW_BASE}/${path}`;
+		const response = await fetch(url);
+
+		if (!response.ok) {
+			throw new Error(`Failed to fetch file: ${response.status}`);
+		}
+
+		return await response.text();
+	} catch (error) {
+		console.error('Failed to fetch GitHub file:', error);
+		return null;
+	}
+}
+
+// Fetch list of images from common-overlays/gamepads/flat/img/
+async function fetchGitHubImageList() {
+	if (githubCache.imageList) {
+		return githubCache.imageList;
+	}
+
+	try {
+		const items = await fetchGitHubDirectory('gamepads/flat/img');
+		if (!items) return [];
+
+		githubCache.imageList = items
+			.filter(item => item.type === 'file' && /\.(png|jpg)$/i.test(item.name))
+			.map(item => item.name);
+
+		return githubCache.imageList;
+	} catch (error) {
+		console.error('Failed to fetch image list:', error);
+		return [];
+	}
+}
+
+// Get display URL for an image (GitHub or local)
+function getImageDisplayUrl(imagePath) {
+	if (!imagePath) return '';
+
+	// Extract just the filename
+	const filename = imagePath.split('/').pop();
+
+	// If we have a local copy, use it (faster)
+	if (images[filename]) {
+		return images[filename];
+	}
+
+	// If it's a common-overlays path, construct GitHub URL
+	if (imagePath.includes('flat/img/') || imagePath.includes('/img/')) {
+		return `${GITHUB_RAW_BASE}/gamepads/flat/img/${filename}`;
+	}
+
+	// Fallback to local img folder
+	return `img/${filename}`;
+}
+
+// Open the GitHub overlay browser dialog
+async function openGitHubOverlayBrowser() {
+	showDialog('github-overlay-dialog', true);
+
+	const statusEl = document.getElementById('github-browser-status');
+	const treeEl = document.getElementById('github-browser-tree');
+
+	statusEl.textContent = 'Loading...';
+	statusEl.className = '';
+	treeEl.innerHTML = '';
+
+	const items = await fetchGitHubDirectory('gamepads');
+
+	if (!items) {
+		statusEl.textContent = 'Failed to load from GitHub. Check your internet connection.';
+		statusEl.className = 'github-browser-error';
+		return;
+	}
+
+	statusEl.textContent = 'Select an overlay to import:';
+
+	// Filter to show only directories (overlay sets)
+	const dirs = items.filter(item => item.type === 'dir');
+	renderGitHubTree(dirs, treeEl, 'gamepads');
+}
+
+// Render directory tree
+function renderGitHubTree(items, container, basePath) {
+	items.forEach(item => {
+		const el = document.createElement('div');
+
+		if (item.type === 'dir') {
+			el.className = 'github-tree-folder';
+			el.textContent = item.name;
+			el.dataset.path = item.path;
+			el.dataset.expanded = 'false';
+
+			const childContainer = document.createElement('div');
+			childContainer.className = 'github-tree-children hidden';
+			el.appendChild(childContainer);
+
+			el.addEventListener('click', async (e) => {
+				e.stopPropagation();
+
+				// Toggle folder
+				if (el.dataset.expanded === 'true') {
+					el.dataset.expanded = 'false';
+					el.classList.remove('expanded');
+					childContainer.classList.add('hidden');
+					return;
+				}
+
+				// Expand and load contents
+				el.dataset.expanded = 'true';
+				el.classList.add('expanded');
+				childContainer.classList.remove('hidden');
+
+				if (childContainer.children.length === 0) {
+					childContainer.innerHTML = '<div class="github-tree-loading">Loading...</div>';
+					const children = await fetchGitHubDirectory(item.path);
+
+					childContainer.innerHTML = '';
+
+					if (children) {
+						// Sort: directories first, then files
+						const sorted = children.sort((a, b) => {
+							if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+							return a.name.localeCompare(b.name);
+						});
+						renderGitHubTree(sorted, childContainer, item.path);
+					} else {
+						childContainer.innerHTML = '<div class="github-tree-error">Failed to load</div>';
+					}
+				}
+			});
+		} else if (item.type === 'file' && item.name.endsWith('.cfg')) {
+			el.className = 'github-tree-file';
+			el.textContent = item.name;
+			el.dataset.path = item.path;
+
+			el.addEventListener('click', async (e) => {
+				e.stopPropagation();
+				await importGitHubOverlay(item.path, item.name);
+			});
+		} else {
+			// Skip non-cfg files
+			return;
+		}
+
+		container.appendChild(el);
+	});
+}
+
+// Import an overlay from GitHub
+async function importGitHubOverlay(path, filename) {
+	const statusEl = document.getElementById('github-browser-status');
+	statusEl.textContent = `Importing ${filename}...`;
+
+	const content = await fetchGitHubFile(path);
+
+	if (!content) {
+		statusEl.textContent = 'Failed to fetch overlay file.';
+		statusEl.className = 'github-browser-error';
+		return;
+	}
+
+	closeGitHubDialog();
+
+	// Store the source path for path preservation
+	const sourcePath = path.substring(0, path.lastIndexOf('/'));
+	importOverlayConfig(content, filename, sourcePath);
+}
+
+// Import overlay config (shared by GitHub and local file import)
+function importOverlayConfig(configString, filename, sourcePath) {
+	undoManager.pushState('Import overlay');
+
+	importedFilename = filename;
+
+	// Store source path for path resolution
+	window.currentOverlaySourcePath = sourcePath || '';
+
+	configStr = configString;
+
+	try {
+		renderConfig(configString);
+		undoManager.clear();
+		console.log('Successfully imported:', filename);
+	} catch (err) {
+		console.error('Config parsing error:', err);
+		alert('Failed to parse config file:\n\n' + err.message);
+	}
+}
+
+// Close GitHub dialog
+function closeGitHubDialog() {
+	showDialog('github-overlay-dialog', false);
+}
+
+// Local file import
+function importLocalFile() {
+	document.getElementById('local-cfg-input').click();
+}
+
+function handleLocalFileImport(input) {
+	const file = input.files[0];
+	if (!file) return;
+
+	const reader = new FileReader();
+	reader.onload = function(e) {
+		importOverlayConfig(e.target.result, file.name, '');
+	};
+	reader.onerror = function() {
+		alert('Failed to read file: ' + (reader.error?.message || 'Unknown error'));
+	};
+	reader.readAsText(file);
+
+	// Reset input so same file can be selected again
+	input.value = '';
+}

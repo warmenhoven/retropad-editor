@@ -800,7 +800,7 @@ function ConfigHandler() {
 				_strings[i] = result ? result[0].trim() : '';
 			}
 
-			// remove path and inline comment from image filenames
+			// clean up image filenames (preserve paths, just normalize quotes)
 			// search 'x_overlay ='
 			if (_strings[i].search(/.\d_overlay\s*=/) != -1) {
 				let param = _strings[i].split('=')[0].trim();
@@ -812,13 +812,11 @@ function ConfigHandler() {
 				if (quot && quot.length == 2)
 					value = quot[1];
 
-				// remove path
-				let lastShalshIndex = Math.max(value.lastIndexOf('\\'), value.lastIndexOf('/'));
-				if (lastShalshIndex != -1)
-					value = value.substr(lastShalshIndex + 1);
+				// Note: We preserve the full path for export compatibility
+				// The path may be relative (e.g., ../flat/img/A.png) or just a filename
 
-				// add quotemarks if spaces present in filename
-				if (value.search(/\s/) == -1)
+				// add quotemarks if spaces or path separators present
+				if (value.search(/[\s\/\\]/) == -1)
 					_strings[i] = param + ' = ' + value;
 				else
 					_strings[i] = param + ' = "' + value + '"';
@@ -1023,13 +1021,17 @@ function ConfigHandler() {
 			let name = _getParamValue('overlay' + i + '_overlay');
 
 			if (!__isOverlayNormalized(i)) {
-				if (imagesObj[name]) {
+				// Try exact name first, then just the filename
+				let filename = name ? name.split('/').pop() : name;
+				let imgData = imagesObj[name] || imagesObj[filename];
+
+				if (imgData) {
 					if (!imgSizes[name]) {
 						imgSizes[name] = {};
-						imgSizes[name].image = imagesObj[name];
+						imgSizes[name].image = imgData;
 						toLoad++;
 					}
-				} else {
+				} else if (name) {
 					if (!missingImages.includes(name))
 						missingImages.push(name);
 				}

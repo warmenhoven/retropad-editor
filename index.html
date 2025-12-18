@@ -26,6 +26,8 @@
 			<select id='template-selector' onchange='loadTemplate(this.value); this.selectedIndex=0;'>
 				<option value=''>Templates...</option>
 			</select>
+			<button onclick='openGitHubOverlayBrowser()' title='Browse and import overlays from common-overlays repository'>Browse overlays...</button>
+			<button onclick='importLocalFile()' class='button--normal-size' title='Import a local .cfg file'>Import .cfg</button>
 			<button id='undo-btn' onclick='undoManager.undo()' disabled title='Undo (Ctrl+Z)'>Undo</button>
 			<button id='redo-btn' onclick='undoManager.redo()' disabled title='Redo (Ctrl+Y)'>Redo</button>
 			<button class='danger button--normal-size' onclick='showDialog("reset-dialog", true)'>Reset</button>
@@ -671,6 +673,25 @@
 				</div>
 			</div>
 		</div>
+
+		<div id='github-overlay-dialog' class='dialog-container hidden'>
+			<div class='modal-dialog github-overlay-browser'>
+				<div class='modal-dialog__header-box'>
+					<span>Import from common-overlays</span>
+					<button class='close-button danger' onclick='closeGitHubDialog()'></button>
+				</div>
+				<div class='modal-dialog__content-box'>
+					<div id='github-browser-status'>Loading...</div>
+					<div id='github-browser-tree'></div>
+				</div>
+				<div class='modal-dialog__footer-box'>
+					<button onclick='closeGitHubDialog()'>Cancel</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Hidden file input for local cfg import -->
+		<input type='file' id='local-cfg-input' accept='.cfg' style='display:none' onchange='handleLocalFileImport(this)'>
 
 	</div>
 </body>
