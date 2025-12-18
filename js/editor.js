@@ -327,11 +327,30 @@ function addDragHandlers(rectElement, lineIndex) {
 		dragState.lineIndex = lineIndex;
 		dragState.hasMoved = false;
 		dragState.undoPushed = false;
-		dragState.groupStartPositions = [];
 
-		// Select this element
-		if (currentRect)
-			currentRect.classList.remove('selected');
+		// Check if this element is part of a group selection
+		const isPartOfGroup = conf.isGroupSelected() && conf.isLineInSelection(lineIndex);
+
+		if (isPartOfGroup && dragState.isDragging) {
+			// Group drag: capture starting positions of ALL selected elements
+			dragState.groupStartPositions = conf.getSelectedIndexes().map(idx => {
+				conf.setCurrentLine(idx);
+				return {
+					lineIndex: idx,
+					x: Number(conf.getCurrentLineSectionValue('x')),
+					y: Number(conf.getCurrentLineSectionValue('y'))
+				};
+			});
+			// Restore current line to dragged element
+			conf.setCurrentLine(lineIndex);
+		} else {
+			// Single element: clear group, select only this element
+			dragState.groupStartPositions = [];
+			if (currentRect)
+				currentRect.classList.remove('selected');
+			deselectAll();
+		}
+
 		currentRect = rectElement;
 		rectElement.classList.add('selected');
 
@@ -368,11 +387,30 @@ function addDragHandlers(rectElement, lineIndex) {
 		dragState.lineIndex = lineIndex;
 		dragState.hasMoved = false;
 		dragState.undoPushed = false;
-		dragState.groupStartPositions = [];
 
-		// Select this element
-		if (currentRect)
-			currentRect.classList.remove('selected');
+		// Check if this element is part of a group selection
+		const isPartOfGroup = conf.isGroupSelected() && conf.isLineInSelection(lineIndex);
+
+		if (isPartOfGroup && dragState.isDragging) {
+			// Group drag: capture starting positions of ALL selected elements
+			dragState.groupStartPositions = conf.getSelectedIndexes().map(idx => {
+				conf.setCurrentLine(idx);
+				return {
+					lineIndex: idx,
+					x: Number(conf.getCurrentLineSectionValue('x')),
+					y: Number(conf.getCurrentLineSectionValue('y'))
+				};
+			});
+			// Restore current line to dragged element
+			conf.setCurrentLine(lineIndex);
+		} else {
+			// Single element: clear group, select only this element
+			dragState.groupStartPositions = [];
+			if (currentRect)
+				currentRect.classList.remove('selected');
+			deselectAll();
+		}
+
 		currentRect = rectElement;
 		rectElement.classList.add('selected');
 
@@ -417,19 +455,36 @@ function handleDragMove(e) {
 		dragState.hasMoved = true;
 	}
 
-	conf.setCurrentLine(dragState.lineIndex);
-
 	if (dragState.isDragging) {
-		let newX = snapToGrid(dragState.startRectX + dx);
-		let newY = snapToGrid(dragState.startRectY + dy);
-		conf.setCurrentLineSectionValue('x', newX.toFixed(10));
-		conf.setCurrentLineSectionValue('y', newY.toFixed(10));
+		if (dragState.groupStartPositions.length > 0) {
+			// Group drag: update ALL selected elements
+			dragState.groupStartPositions.forEach(item => {
+				const newX = snapToGrid(item.x + dx);
+				const newY = snapToGrid(item.y + dy);
+				conf.setCurrentLine(item.lineIndex);
+				conf.setCurrentLineSectionValue('x', newX.toFixed(10));
+				conf.setCurrentLineSectionValue('y', newY.toFixed(10));
+				updateRectVisual(item.lineIndex);
+			});
+			// Restore current line and update the dragged element's sliders
+			conf.setCurrentLine(dragState.lineIndex);
+			updateEditorSliderValues();
+		} else {
+			// Single element drag
+			conf.setCurrentLine(dragState.lineIndex);
+			let newX = snapToGrid(dragState.startRectX + dx);
+			let newY = snapToGrid(dragState.startRectY + dy);
+			conf.setCurrentLineSectionValue('x', newX.toFixed(10));
+			conf.setCurrentLineSectionValue('y', newY.toFixed(10));
+			updateCurrentLine();
+			updateEditorSliderValues();
+		}
 	} else if (dragState.isResizing) {
+		conf.setCurrentLine(dragState.lineIndex);
 		handleResize(dragState.resizeHandle, dx, dy);
+		updateCurrentLine();
+		updateEditorSliderValues();
 	}
-
-	updateCurrentLine();
-	updateEditorSliderValues();
 }
 
 function handleResize(handle, dx, dy) {
