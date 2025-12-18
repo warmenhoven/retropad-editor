@@ -150,35 +150,60 @@ let configStr = defaultConfigString; // defaults.js
 renderConfig(configStr);
 
 // Track slider drag state for undo
-let sliderDragStarted = false;
+let sliderDragActive = false;
+let sliderUndoPushed = false;
 
 'xywh'.split('').forEach(elem => {
 	let range = document.getElementById(elem + '-range');
 	let text = document.getElementById(elem + '-number');
 
-	// Save state when slider drag starts
+	// Mark slider as active on interaction start
 	range.addEventListener('mousedown', () => {
-		if (!sliderDragStarted) {
-			undoManager.pushState('Adjust ' + elem.toUpperCase());
-			sliderDragStarted = true;
-		}
+		sliderDragActive = true;
+		sliderUndoPushed = false;
 	});
 
 	range.addEventListener('mouseup', () => {
-		sliderDragStarted = false;
+		sliderDragActive = false;
 	});
 
+	// Touch support for sliders
+	range.addEventListener('touchstart', () => {
+		sliderDragActive = true;
+		sliderUndoPushed = false;
+	}, { passive: true });
+
+	range.addEventListener('touchend', () => {
+		sliderDragActive = false;
+	}, { passive: true });
+
 	range.addEventListener('input', (e) => {
+		// Push undo state on first value change, not on initial touch/click
+		if (sliderDragActive && !sliderUndoPushed) {
+			undoManager.pushState('Adjust ' + elem.toUpperCase());
+			sliderUndoPushed = true;
+		}
 		applyButtonParam(elem, e.target.value);
 		text.value = e.target.value;
 	});
 
-	// Save state when number input changes (on blur to avoid too many states)
+	// Track number input state for undo
+	let numberUndoPushed = false;
+
 	text.addEventListener('focus', () => {
-		undoManager.pushState('Adjust ' + elem.toUpperCase());
+		numberUndoPushed = false;
+	});
+
+	text.addEventListener('blur', () => {
+		numberUndoPushed = false;
 	});
 
 	text.addEventListener('input', (e) => {
+		// Push undo state on first value change
+		if (!numberUndoPushed) {
+			undoManager.pushState('Adjust ' + elem.toUpperCase());
+			numberUndoPushed = true;
+		}
 		applyButtonParam(elem, e.target.value);
 		range.value = e.target.value;
 	});
@@ -284,20 +309,15 @@ function addDragHandlers(rectElement, lineIndex) {
 		dragState.element = rectElement;
 		dragState.lineIndex = lineIndex;
 		dragState.hasMoved = false;
+		dragState.undoPushed = false;
+		dragState.groupStartPositions = [];
 
-		// Check if this element is part of existing group selection
-		const isPartOfGroup = conf.isSelected(lineIndex) && conf.isGroupSelected();
-
-		if (!isPartOfGroup) {
-			// Clear selection and select just this one
-			if (currentRect)
-				currentRect.classList.remove('selected');
-			document.querySelectorAll('.rect.selected').forEach(el => el.classList.remove('selected'));
-			conf.resetGroupSelection();
-		}
-
+		// Select this element
+		if (currentRect)
+			currentRect.classList.remove('selected');
 		currentRect = rectElement;
 		rectElement.classList.add('selected');
+
 		conf.setCurrentLine(lineIndex);
 		enableEditor(true);
 		updateEditorSliderValues();
@@ -306,21 +326,6 @@ function addDragHandlers(rectElement, lineIndex) {
 		dragState.startRectY = Number(conf.getCurrentLineSectionValue('y'));
 		dragState.startRectW = Number(conf.getCurrentLineSectionValue('w'));
 		dragState.startRectH = Number(conf.getCurrentLineSectionValue('h'));
-		dragState.undoPushed = false;
-
-		// Store group positions if dragging (not resizing) a group
-		dragState.groupStartPositions = [];
-		if (dragState.isDragging && isPartOfGroup) {
-			conf.getSelectedIndexes().forEach(idx => {
-				conf.setCurrentLine(idx);
-				dragState.groupStartPositions.push({
-					lineIndex: idx,
-					x: Number(conf.getCurrentLineSectionValue('x')),
-					y: Number(conf.getCurrentLineSectionValue('y'))
-				});
-			});
-			conf.setCurrentLine(lineIndex);  // Reset to dragged element
-		}
 
 		e.stopPropagation();
 		e.preventDefault();
@@ -345,20 +350,15 @@ function addDragHandlers(rectElement, lineIndex) {
 		dragState.element = rectElement;
 		dragState.lineIndex = lineIndex;
 		dragState.hasMoved = false;
+		dragState.undoPushed = false;
+		dragState.groupStartPositions = [];
 
-		// Check if this element is part of existing group selection
-		const isPartOfGroup = conf.isSelected(lineIndex) && conf.isGroupSelected();
-
-		if (!isPartOfGroup) {
-			// Clear selection and select just this one
-			if (currentRect)
-				currentRect.classList.remove('selected');
-			document.querySelectorAll('.rect.selected').forEach(el => el.classList.remove('selected'));
-			conf.resetGroupSelection();
-		}
-
+		// Select this element
+		if (currentRect)
+			currentRect.classList.remove('selected');
 		currentRect = rectElement;
 		rectElement.classList.add('selected');
+
 		conf.setCurrentLine(lineIndex);
 		enableEditor(true);
 		updateEditorSliderValues();
@@ -367,21 +367,6 @@ function addDragHandlers(rectElement, lineIndex) {
 		dragState.startRectY = Number(conf.getCurrentLineSectionValue('y'));
 		dragState.startRectW = Number(conf.getCurrentLineSectionValue('w'));
 		dragState.startRectH = Number(conf.getCurrentLineSectionValue('h'));
-		dragState.undoPushed = false;
-
-		// Store group positions if dragging (not resizing) a group
-		dragState.groupStartPositions = [];
-		if (dragState.isDragging && isPartOfGroup) {
-			conf.getSelectedIndexes().forEach(idx => {
-				conf.setCurrentLine(idx);
-				dragState.groupStartPositions.push({
-					lineIndex: idx,
-					x: Number(conf.getCurrentLineSectionValue('x')),
-					y: Number(conf.getCurrentLineSectionValue('y'))
-				});
-			});
-			conf.setCurrentLine(lineIndex);  // Reset to dragged element
-		}
 
 		e.preventDefault();
 	}, { passive: false });
@@ -418,24 +403,10 @@ function handleDragMove(e) {
 	conf.setCurrentLine(dragState.lineIndex);
 
 	if (dragState.isDragging) {
-		// Move all group elements if we have a group
-		if (dragState.groupStartPositions.length > 0) {
-			dragState.groupStartPositions.forEach(item => {
-				conf.setCurrentLine(item.lineIndex);
-				let newX = snapToGrid(item.x + dx);
-				let newY = snapToGrid(item.y + dy);
-				conf.setCurrentLineSectionValue('x', newX.toFixed(10));
-				conf.setCurrentLineSectionValue('y', newY.toFixed(10));
-				// Update visual for this element
-				updateRectVisual(item.lineIndex);
-			});
-			conf.setCurrentLine(dragState.lineIndex);  // Reset to primary element
-		} else {
-			let newX = snapToGrid(dragState.startRectX + dx);
-			let newY = snapToGrid(dragState.startRectY + dy);
-			conf.setCurrentLineSectionValue('x', newX.toFixed(10));
-			conf.setCurrentLineSectionValue('y', newY.toFixed(10));
-		}
+		let newX = snapToGrid(dragState.startRectX + dx);
+		let newY = snapToGrid(dragState.startRectY + dy);
+		conf.setCurrentLineSectionValue('x', newX.toFixed(10));
+		conf.setCurrentLineSectionValue('y', newY.toFixed(10));
 	} else if (dragState.isResizing) {
 		handleResize(dragState.resizeHandle, dx, dy);
 	}

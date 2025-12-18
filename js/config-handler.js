@@ -34,6 +34,11 @@ function ConfigHandler() {
 	}
 
 
+	this.getCurrentLine = function () {
+		return _currentLine;
+	}
+
+
 	// sections are 'command', 'shape', 'x', 'y', 'w', 'h'
 	this.getCurrentLineSectionValue = function (section) {
 		if (_currentLine == -1)
