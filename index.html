@@ -27,11 +27,9 @@
 				<option value=''>Templates...</option>
 			</select>
 			<button onclick='openGitHubOverlayBrowser()' title='Browse and import overlays from common-overlays repository'>Browse overlays...</button>
-			<button onclick='importLocalFile()' class='button--normal-size' title='Import a local .cfg file'>Import .cfg</button>
 			<button id='undo-btn' onclick='undoManager.undo()' disabled title='Undo (Ctrl+Z)'>Undo</button>
 			<button id='redo-btn' onclick='undoManager.redo()' disabled title='Redo (Ctrl+Y)'>Redo</button>
 			<button class='danger button--normal-size' onclick='showDialog("reset-dialog", true)'>Reset</button>
-			<button onclick='togglePreviewMode()' title='Preview mode (Esc to exit)'>Preview</button>
 			<span id='header__caption'><img src='img/retroarch-icon.svg'>RetroPad Editor</span>
 		</div>
 
@@ -44,6 +42,7 @@
 						<button onclick='showScreenSizeDialog()'>Set screen size</button>
 						<button title='Color theme' id='show-colors-button' onclick='showColorsDialog()'>C</button>
 					</div>
+					<button onclick='togglePreviewMode()' title='Preview mode (Esc to exit)'>Preview</button>
 					<br>
 					<div class='toolbar-group__checkboxes'>
 						<div class='checkbox-wrapper'>
@@ -94,6 +93,7 @@
 
 				<div class='toolbar-group'>
 					<span class='group-header'>BUTTON</span>
+					<span id='selected-button-name'></span>
 					<div class='toolbar-group__buttons'>
 						<button onclick='showButtonCreator()'>New button</button>
 						<button id='del-current-button' onclick='showDialog("button-delete-dialog", true)'>Delete

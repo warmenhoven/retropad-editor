@@ -306,6 +306,9 @@ function createPadView() {
 			if (currentRect)
 				currentRect.classList.remove('selected');
 
+			// Clear any group selection when clicking a single button
+			conf.resetGroupSelection();
+
 			conf.setCurrentLine(r.i);
 			currentRect = b;
 
@@ -320,6 +323,7 @@ function createPadView() {
 
 			enableEditor(true);
 			updateAlignmentToolsVisibility();
+			updateSelectedButtonName();
 			document.activeElement.blur();
 		});
 	}
@@ -375,6 +379,8 @@ function initDragState(clientX, clientY, target, rectElement, lineIndex) {
 	conf.setCurrentLine(lineIndex);
 	enableEditor(true);
 	updateEditorSliderValues();
+	updateAlignmentToolsVisibility();
+	updateSelectedButtonName();
 
 	dragState.startRectX = Number(conf.getCurrentLineSectionValue('x'));
 	dragState.startRectY = Number(conf.getCurrentLineSectionValue('y'));
@@ -690,8 +696,10 @@ function setEditorControls() {
 	let size = conf.getSelectionDimensions();
 	if (size)
 		enableEditorSliders(true);
-	else
+	else {
+		updateSelectedButtonName();
 		return;
+	}
 
 	'xywh'.split('').forEach(elem => {
 		let range = document.getElementById(elem + '-range');
@@ -699,6 +707,9 @@ function setEditorControls() {
 		text.value = Number(size[elem].toFixed(10));
 		range.value = size[elem];
 	});
+
+	updateAlignmentToolsVisibility();
+	updateSelectedButtonName();
 }
 
 
@@ -1266,6 +1277,9 @@ function enableEditor(enable) {
 	enableEditorSliders(enable)
 	document.getElementById('show-button-editor').disabled = !enable;
 	document.getElementById('del-current-button').disabled = !enable;
+	if (!enable) {
+		updateSelectedButtonName();
+	}
 }
 
 
@@ -2177,6 +2191,9 @@ function togglePreviewMode() {
 		screen.scale = 1;
 		setScreenDimensions();
 		redrawPad();
+	} else {
+		// Restore grid if it was enabled
+		updateGridOverlay();
 	}
 }
 
@@ -2211,12 +2228,14 @@ function applyDevicePreset() {
 function loadTemplate(name) {
 	if (!overlayTemplates || !overlayTemplates[name]) return;
 
-	if (confirm('Load template? This will replace current configuration.')) {
-		undoManager.pushState('Load template');
-		configStr = overlayTemplates[name];
-		renderConfig(configStr);
-		undoManager.clear();
+	// Warn if there's unsaved work
+	if (undoManager.history.length > 0) {
+		if (!confirm('This will replace your current work. Continue?')) return;
 	}
+
+	configStr = overlayTemplates[name];
+	renderConfig(configStr);
+	undoManager.clear();
 }
 
 // Update alignment tools visibility based on selection
@@ -2224,6 +2243,21 @@ function updateAlignmentToolsVisibility() {
 	const tools = document.getElementById('alignment-tools');
 	if (tools) {
 		tools.classList.toggle('visible', conf.isGroupSelected());
+	}
+}
+
+// Update selected button name display
+function updateSelectedButtonName() {
+	const el = document.getElementById('selected-button-name');
+	if (!el) return;
+
+	if (conf.isGroupSelected()) {
+		const count = conf.getSelectedIndexes().length;
+		el.textContent = `(${count} selected)`;
+	} else if (conf.getCurrentLineSectionValue('command')) {
+		el.textContent = conf.getCurrentLineSectionValue('command');
+	} else {
+		el.textContent = '';
 	}
 }
 
@@ -2321,12 +2355,33 @@ function getImageDisplayUrl(imagePath) {
 		return images[filename];
 	}
 
-	// If it's a common-overlays path, construct GitHub URL
+	// If we have a source path from GitHub import, resolve relative to it
+	if (window.currentOverlaySourcePath) {
+		const sourcePath = window.currentOverlaySourcePath;
+
+		// Handle relative paths like ../flat/img/A.png
+		if (imagePath.startsWith('../')) {
+			// Go up one directory from sourcePath and append the rest
+			const parentPath = sourcePath.substring(0, sourcePath.lastIndexOf('/'));
+			const relativePart = imagePath.substring(3); // Remove ../
+			return `${GITHUB_RAW_BASE}/${parentPath}/${relativePart}`;
+		}
+
+		// Handle paths like img/button.png (relative to overlay location)
+		if (imagePath.includes('/')) {
+			return `${GITHUB_RAW_BASE}/${sourcePath}/${imagePath}`;
+		}
+
+		// Just a filename - try the source path's img folder first
+		return `${GITHUB_RAW_BASE}/${sourcePath}/img/${filename}`;
+	}
+
+	// Fallback: try flat/img for common images
 	if (imagePath.includes('flat/img/') || imagePath.includes('/img/')) {
 		return `${GITHUB_RAW_BASE}/gamepads/flat/img/${filename}`;
 	}
 
-	// Fallback to local img folder
+	// Final fallback to local img folder
 	return `img/${filename}`;
 }
 
@@ -2425,6 +2480,11 @@ function renderGitHubTree(items, container, basePath) {
 
 // Import an overlay from GitHub
 async function importGitHubOverlay(path, filename) {
+	// Warn if there's unsaved work
+	if (undoManager.history.length > 0) {
+		if (!confirm('This will replace your current work. Continue?')) return;
+	}
+
 	const statusEl = document.getElementById('github-browser-status');
 	statusEl.textContent = `Importing ${filename}...`;
 
