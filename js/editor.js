@@ -116,7 +116,7 @@ const undoManager = {
 let gridSettings = {
 	enabled: false,
 	snap: false,
-	size: 0.05
+	size: 0.02
 };
 
 // Preview mode
@@ -183,8 +183,14 @@ let sliderUndoPushed = false;
 			undoManager.pushState('Adjust ' + elem.toUpperCase());
 			sliderUndoPushed = true;
 		}
-		applyButtonParam(elem, e.target.value);
-		text.value = e.target.value;
+		let value = Number(e.target.value);
+		// Snap x/y if enabled
+		if ((elem === 'x' || elem === 'y') && gridSettings.snap) {
+			value = snapToGrid(value);
+			range.value = value;
+		}
+		applyButtonParam(elem, value);
+		text.value = value;
 	});
 
 	// Track number input state for undo
@@ -204,8 +210,14 @@ let sliderUndoPushed = false;
 			undoManager.pushState('Adjust ' + elem.toUpperCase());
 			numberUndoPushed = true;
 		}
-		applyButtonParam(elem, e.target.value);
-		range.value = e.target.value;
+		let value = Number(e.target.value);
+		// Snap x/y if enabled
+		if ((elem === 'x' || elem === 'y') && gridSettings.snap) {
+			value = snapToGrid(value);
+			text.value = value;
+		}
+		applyButtonParam(elem, value);
+		range.value = value;
 	});
 });
 
@@ -227,6 +239,11 @@ document.getElementById('chk-show-screenshot').addEventListener('change', toggle
 
 function applyButtonParam(section, sValue) {
 	let value = Number(sValue);
+
+	// Apply snap to x/y if enabled
+	if ((section === 'x' || section === 'y') && gridSettings.snap) {
+		value = snapToGrid(value);
+	}
 
 	if (conf.isGroupSelected()) {
 		conf.setSelectionSectionValue(section, value);
@@ -2039,6 +2056,9 @@ function updateGridOverlay() {
 		overlay.style.display = 'block';
 		const pct = gridSettings.size * 100;
 		overlay.style.backgroundSize = `${pct}% ${pct}%`;
+		overlay.style.backgroundImage =
+			'linear-gradient(to right, rgba(100,100,200,0.3) 1px, transparent 1px),' +
+			'linear-gradient(to bottom, rgba(100,100,200,0.3) 1px, transparent 1px)';
 	} else {
 		overlay.style.display = 'none';
 	}
