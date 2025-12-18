@@ -391,7 +391,7 @@
 			'vrr_runloop_toggle', 'ai_service'
 		],
 		'Special': [
-			'null'
+			'null', 'hold', 'turbo'
 		]
 	};
 
