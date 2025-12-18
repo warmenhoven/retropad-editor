@@ -153,6 +153,22 @@ renderConfig(configStr);
 let sliderDragActive = false;
 let sliderUndoPushed = false;
 
+// Validate and clamp input values to reasonable ranges
+function validateInputValue(elem, value) {
+	// Handle NaN
+	if (isNaN(value)) return 0;
+
+	// x, y: allow off-screen but cap at reasonable range
+	if (elem === 'x' || elem === 'y') {
+		return Math.max(-0.5, Math.min(1.5, value));
+	}
+	// w, h: must be positive, cap at half screen
+	if (elem === 'w' || elem === 'h') {
+		return Math.max(0.001, Math.min(0.5, value));
+	}
+	return value;
+}
+
 'xywh'.split('').forEach(elem => {
 	let range = document.getElementById(elem + '-range');
 	let text = document.getElementById(elem + '-number');
@@ -183,12 +199,12 @@ let sliderUndoPushed = false;
 			undoManager.pushState('Adjust ' + elem.toUpperCase());
 			sliderUndoPushed = true;
 		}
-		let value = Number(e.target.value);
+		let value = validateInputValue(elem, Number(e.target.value));
 		// Snap x/y if enabled
 		if ((elem === 'x' || elem === 'y') && gridSettings.snap) {
 			value = snapToGrid(value);
-			range.value = value;
 		}
+		range.value = value;
 		applyButtonParam(elem, value);
 		text.value = value;
 	});
@@ -210,12 +226,12 @@ let sliderUndoPushed = false;
 			undoManager.pushState('Adjust ' + elem.toUpperCase());
 			numberUndoPushed = true;
 		}
-		let value = Number(e.target.value);
+		let value = validateInputValue(elem, Number(e.target.value));
 		// Snap x/y if enabled
 		if ((elem === 'x' || elem === 'y') && gridSettings.snap) {
 			value = snapToGrid(value);
-			text.value = value;
 		}
+		text.value = value;
 		applyButtonParam(elem, value);
 		range.value = value;
 	});
@@ -307,123 +323,81 @@ function createPadView() {
 }
 
 
+// Helper to initialize drag state - shared by mouse and touch handlers
+function initDragState(clientX, clientY, target, rectElement, lineIndex) {
+	const handle = target.closest('.resize-handle');
+
+	if (handle) {
+		dragState.isResizing = true;
+		dragState.resizeHandle = handle.dataset.handle;
+	} else if (target === rectElement || target.classList.contains('saturate-indicator') || target.nodeType === 3) {
+		dragState.isDragging = true;
+	} else {
+		return false; // Not a valid drag target
+	}
+
+	dragState.startX = clientX;
+	dragState.startY = clientY;
+	dragState.element = rectElement;
+	dragState.lineIndex = lineIndex;
+	dragState.hasMoved = false;
+	dragState.undoPushed = false;
+
+	// Check if this element is part of a group selection
+	const isPartOfGroup = conf.isGroupSelected() && conf.isLineInSelection(lineIndex);
+
+	if (isPartOfGroup && dragState.isDragging) {
+		// Group drag: capture starting positions of ALL selected elements
+		dragState.groupStartPositions = conf.getSelectedIndexes().map(idx => {
+			conf.setCurrentLine(idx);
+			return {
+				lineIndex: idx,
+				x: Number(conf.getCurrentLineSectionValue('x')),
+				y: Number(conf.getCurrentLineSectionValue('y'))
+			};
+		});
+		// Restore current line to dragged element
+		conf.setCurrentLine(lineIndex);
+	} else {
+		// Single element: clear group, select only this element
+		dragState.groupStartPositions = [];
+		if (currentRect)
+			currentRect.classList.remove('selected');
+		deselectAll();
+	}
+
+	currentRect = rectElement;
+	rectElement.classList.add('selected');
+
+	conf.setCurrentLine(lineIndex);
+	enableEditor(true);
+	updateEditorSliderValues();
+
+	dragState.startRectX = Number(conf.getCurrentLineSectionValue('x'));
+	dragState.startRectY = Number(conf.getCurrentLineSectionValue('y'));
+	dragState.startRectW = Number(conf.getCurrentLineSectionValue('w'));
+	dragState.startRectH = Number(conf.getCurrentLineSectionValue('h'));
+
+	return true;
+}
+
 function addDragHandlers(rectElement, lineIndex) {
 	rectElement.addEventListener('mousedown', (e) => {
 		if (e.button !== 0) return;
 
-		const handle = e.target.closest('.resize-handle');
-		if (handle) {
-			dragState.isResizing = true;
-			dragState.resizeHandle = handle.dataset.handle;
-		} else if (e.target === rectElement || e.target.classList.contains('saturate-indicator') || e.target.nodeType === 3) {
-			dragState.isDragging = true;
-		} else {
-			return;
+		if (initDragState(e.clientX, e.clientY, e.target, rectElement, lineIndex)) {
+			e.stopPropagation();
+			e.preventDefault();
 		}
-
-		dragState.startX = e.clientX;
-		dragState.startY = e.clientY;
-		dragState.element = rectElement;
-		dragState.lineIndex = lineIndex;
-		dragState.hasMoved = false;
-		dragState.undoPushed = false;
-
-		// Check if this element is part of a group selection
-		const isPartOfGroup = conf.isGroupSelected() && conf.isLineInSelection(lineIndex);
-
-		if (isPartOfGroup && dragState.isDragging) {
-			// Group drag: capture starting positions of ALL selected elements
-			dragState.groupStartPositions = conf.getSelectedIndexes().map(idx => {
-				conf.setCurrentLine(idx);
-				return {
-					lineIndex: idx,
-					x: Number(conf.getCurrentLineSectionValue('x')),
-					y: Number(conf.getCurrentLineSectionValue('y'))
-				};
-			});
-			// Restore current line to dragged element
-			conf.setCurrentLine(lineIndex);
-		} else {
-			// Single element: clear group, select only this element
-			dragState.groupStartPositions = [];
-			if (currentRect)
-				currentRect.classList.remove('selected');
-			deselectAll();
-		}
-
-		currentRect = rectElement;
-		rectElement.classList.add('selected');
-
-		conf.setCurrentLine(lineIndex);
-		enableEditor(true);
-		updateEditorSliderValues();
-
-		dragState.startRectX = Number(conf.getCurrentLineSectionValue('x'));
-		dragState.startRectY = Number(conf.getCurrentLineSectionValue('y'));
-		dragState.startRectW = Number(conf.getCurrentLineSectionValue('w'));
-		dragState.startRectH = Number(conf.getCurrentLineSectionValue('h'));
-
-		e.stopPropagation();
-		e.preventDefault();
 	});
 
-	// Touch support
 	rectElement.addEventListener('touchstart', (e) => {
 		if (e.touches.length !== 1) return;
 
 		const touch = e.touches[0];
-		const handle = e.target.closest('.resize-handle');
-
-		if (handle) {
-			dragState.isResizing = true;
-			dragState.resizeHandle = handle.dataset.handle;
-		} else {
-			dragState.isDragging = true;
+		if (initDragState(touch.clientX, touch.clientY, e.target, rectElement, lineIndex)) {
+			e.preventDefault();
 		}
-
-		dragState.startX = touch.clientX;
-		dragState.startY = touch.clientY;
-		dragState.element = rectElement;
-		dragState.lineIndex = lineIndex;
-		dragState.hasMoved = false;
-		dragState.undoPushed = false;
-
-		// Check if this element is part of a group selection
-		const isPartOfGroup = conf.isGroupSelected() && conf.isLineInSelection(lineIndex);
-
-		if (isPartOfGroup && dragState.isDragging) {
-			// Group drag: capture starting positions of ALL selected elements
-			dragState.groupStartPositions = conf.getSelectedIndexes().map(idx => {
-				conf.setCurrentLine(idx);
-				return {
-					lineIndex: idx,
-					x: Number(conf.getCurrentLineSectionValue('x')),
-					y: Number(conf.getCurrentLineSectionValue('y'))
-				};
-			});
-			// Restore current line to dragged element
-			conf.setCurrentLine(lineIndex);
-		} else {
-			// Single element: clear group, select only this element
-			dragState.groupStartPositions = [];
-			if (currentRect)
-				currentRect.classList.remove('selected');
-			deselectAll();
-		}
-
-		currentRect = rectElement;
-		rectElement.classList.add('selected');
-
-		conf.setCurrentLine(lineIndex);
-		enableEditor(true);
-		updateEditorSliderValues();
-
-		dragState.startRectX = Number(conf.getCurrentLineSectionValue('x'));
-		dragState.startRectY = Number(conf.getCurrentLineSectionValue('y'));
-		dragState.startRectW = Number(conf.getCurrentLineSectionValue('w'));
-		dragState.startRectH = Number(conf.getCurrentLineSectionValue('h'));
-
-		e.preventDefault();
 	}, { passive: false });
 }
 
@@ -735,11 +709,14 @@ function loadConfigFromFile(e) {
 		configStr = ev.target.result;
 		try {
 			renderConfig(ev.target.result);
-		} catch {
-			let errMsg = 'FILE PARSING ERROR!';
-			console.log(errMsg);
-			alert(errMsg + '\nReload page and try again.')
+		} catch (err) {
+			console.error('Config parsing error:', err);
+			alert('Failed to parse config file:\n\n' + err.message + '\n\nCheck the file format and try again.');
 		}
+	};
+	reader.onerror = function () {
+		console.error('Failed to read file:', reader.error);
+		alert('Failed to read file: ' + (reader.error?.message || 'Unknown error'));
 	};
 	reader.readAsText(file);
 }
@@ -762,18 +739,19 @@ function renderConfig(str) {
 function loadImageFiles(e) {
 	let imgCounter = 0;
 	let loadCounter = 0;
+	let failedFiles = [];
 
 	for (let i = 0; i < e.target.files.length; i++) {
 		let file = e.target.files[i];
 
-		let ext = e.target.files[i].name.substr(-4);
+		let ext = e.target.files[i].name.substr(-4).toLowerCase();
 
 		if (!file || (ext != '.png' && ext != '.jpg'))
 			continue;
 
 		imgCounter++;
 		let name = e.target.files[i].name;
-		console.log(name);
+		console.log('Loading image:', name);
 
 		let reader = new FileReader();
 
@@ -782,11 +760,25 @@ function loadImageFiles(e) {
 
 			if (!userImages.includes(name)) {
 				userImages.push(name);
-				console.log(name);
 			}
 
 			// onload is async function so loop ends BEFORE it's first launch
 			if (++loadCounter == imgCounter) {
+				if (failedFiles.length > 0) {
+					alert('Failed to load some images:\n' + failedFiles.join('\n'));
+				}
+				redrawPad();
+				fillImageSelector();
+			}
+		};
+
+		reader.onerror = function () {
+			console.error('Failed to read image:', name, reader.error);
+			failedFiles.push(name);
+			if (++loadCounter == imgCounter) {
+				if (failedFiles.length > 0) {
+					alert('Failed to load some images:\n' + failedFiles.join('\n'));
+				}
 				redrawPad();
 				fillImageSelector();
 			}
@@ -799,9 +791,11 @@ function loadImageFiles(e) {
 
 function loadScreenshotFile(e) {
 	let file = e.target.files[0];
+	if (!file)
+		return;
 
 	let name = file.name;
-	console.log(name);
+	console.log('Loading screenshot:', name);
 
 	let reader = new FileReader();
 
@@ -810,20 +804,31 @@ function loadScreenshotFile(e) {
 		screen.shotShow = true;
 		refreshScreenshot();
 
-		//get image dimensions;
+		// Get image dimensions
 		if (screen.shotImage) {
 			let im = document.createElement('IMG');
 			im.onload = function () {
 				screen.shotWidth = im.naturalWidth;
 				screen.shotHeight = im.naturalHeight;
-				console.log('Size', im.naturalWidth, im.naturalHeight);
+				console.log('Screenshot size:', im.naturalWidth, 'x', im.naturalHeight);
 
 				setScreenDimensions();
 				redrawPad();
-			}
+			};
+			im.onerror = function () {
+				console.error('Failed to load screenshot image');
+				// Still allow using the screenshot, just with default dimensions
+				setScreenDimensions();
+				redrawPad();
+			};
 			im.src = screen.shotImage;
 		}
-	}
+	};
+
+	reader.onerror = function () {
+		console.error('Failed to read screenshot:', reader.error);
+		alert('Failed to read screenshot: ' + (reader.error?.message || 'Unknown error'));
+	};
 
 	reader.readAsDataURL(file);
 }
@@ -1320,7 +1325,7 @@ function processRawProperties(str) {
 		let eqPos = line.indexOf('=');
 
 		if (eqPos <= 0) {
-			alert('Error in line "' + line + '"\nProperty removed');
+			alert('Invalid property format: "' + line + '"\n\nProperties must be in "name = value" format. This line was skipped.');
 			return;
 		}
 
@@ -1505,7 +1510,7 @@ function getButtonDataFromDialog() {
 	d.command = document.getElementById('command-name').value.trim() || 'null';
 	if (d.command.search(/\s/) != -1) {
 		d.warn = true;
-		alert('Button command should not contain spaces');
+		alert('Invalid command name: Commands cannot contain spaces.\n\nUse underscores instead (e.g., "load_state" not "load state").');
 	}
 
 	d.shape = ['rect', 'radial'][document.getElementById('button-shape').selectedIndex];
@@ -1614,7 +1619,7 @@ function delCurrentButton() {
 
 	undoManager.pushState('Delete Button');
 	if (!conf.deleteCurrentButton())
-		alert('No selection!');
+		alert('No button selected. Click on a button first, then try again.');
 	redrawPad();
 }
 
@@ -1915,6 +1920,9 @@ function setColorScheme(index) {
 
 	if (index > 0)
 		screenpad.classList.add('scheme-' + index);
+
+	// Update grid color for new scheme
+	updateGridOverlay();
 }
 
 
@@ -2111,9 +2119,15 @@ function updateGridOverlay() {
 		overlay.style.display = 'block';
 		const pct = gridSettings.size * 100;
 		overlay.style.backgroundSize = `${pct}% ${pct}%`;
+
+		// Use brighter grid color on dark color schemes
+		const screenpad = document.getElementById('screenpad');
+		const isDarkScheme = screenpad && (screenpad.classList.contains('scheme-1') || screenpad.classList.contains('scheme-2'));
+		const gridColor = isDarkScheme ? 'rgba(150,180,255,0.5)' : 'rgba(80,80,160,0.4)';
+
 		overlay.style.backgroundImage =
-			'linear-gradient(to right, rgba(100,100,200,0.3) 1px, transparent 1px),' +
-			'linear-gradient(to bottom, rgba(100,100,200,0.3) 1px, transparent 1px)';
+			`linear-gradient(to right, ${gridColor} 1px, transparent 1px),` +
+			`linear-gradient(to bottom, ${gridColor} 1px, transparent 1px)`;
 	} else {
 		overlay.style.display = 'none';
 	}

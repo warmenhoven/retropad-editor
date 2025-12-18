@@ -182,7 +182,7 @@ function ConfigHandler() {
 		let count = Number(_getParamValue('overlays'));
 
 		if (count <= 1) {
-			alert('Can not delete last overlay');
+			alert('Cannot delete the last overlay. Each config must have at least one overlay.');
 			return;
 		}
 
@@ -351,7 +351,7 @@ function ConfigHandler() {
 		let buttCount = Number(_getParamValue('overlay' + _currentOverlay + '_descs'));
 
 		if (buttCount <= 1) {
-			alert('Can not delete last button!');
+			alert('Cannot delete the last button. Each overlay must have at least one button.');
 			return;
 		}
 
@@ -1011,7 +1011,7 @@ function ConfigHandler() {
 	}
 
 
-	function _normalizeOverlays(onFinshCallback, imagesObj) {
+	function _normalizeOverlays(onFinishCallback, imagesObj) {
 		imagesObj = imagesObj || {};
 
 		let count = Number(_getParamValue('overlays'));
@@ -1037,13 +1037,13 @@ function ConfigHandler() {
 		}
 
 		if (missingImages.length > 0) {
-			alert('Images are requiered for loading gamepad config:\n\n' + missingImages.join("\n") + '\n\nImport these files and click "Reset".')
+			alert('Missing images required for loading config:\n\n' + missingImages.join('\n') + '\n\nImport these files using "Import images" and click "Reset".');
 		}
 
 		if (toLoad == 0) {
 			__normalizeIfNeeded(imgSizes);
-			if (onFinshCallback)
-				onFinshCallback();
+			if (onFinishCallback)
+				onFinishCallback();
 
 			return;
 		}
@@ -1059,10 +1059,25 @@ function ConfigHandler() {
 
 				if (loaded == toLoad) {
 					__normalizeIfNeeded(imgSizes);
-					if (onFinshCallback)
-						onFinshCallback();
+					if (onFinishCallback)
+						onFinishCallback();
 				}
-			}
+			};
+
+			img.onerror = function () {
+				console.error('Failed to load image:', key);
+				loaded++;
+				// Use default dimensions so we can continue
+				imgSizes[key].w = 1280;
+				imgSizes[key].h = 720;
+
+				if (loaded == toLoad) {
+					__normalizeIfNeeded(imgSizes);
+					if (onFinishCallback)
+						onFinishCallback();
+				}
+			};
+
 			img.src = imgSizes[key].image;
 		}
 
