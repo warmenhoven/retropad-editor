@@ -545,3 +545,140 @@ input[type=number] {
 .hidden {
 	display: none;
 }
+
+/* Resize handles */
+.resize-handle {
+	position: absolute;
+	width: 8px;
+	height: 8px;
+	background: #08d;
+	border: 1px solid #fff;
+	box-sizing: border-box;
+	opacity: 0;
+	z-index: 10;
+	pointer-events: none;
+}
+
+.rect.selected .resize-handle,
+.rect:hover .resize-handle {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.resize-handle--nw { top: -4px; left: -4px; cursor: nwse-resize; }
+.resize-handle--n { top: -4px; left: 50%; margin-left: -4px; cursor: ns-resize; }
+.resize-handle--ne { top: -4px; right: -4px; cursor: nesw-resize; }
+.resize-handle--e { top: 50%; margin-top: -4px; right: -4px; cursor: ew-resize; }
+.resize-handle--se { bottom: -4px; right: -4px; cursor: nwse-resize; }
+.resize-handle--s { bottom: -4px; left: 50%; margin-left: -4px; cursor: ns-resize; }
+.resize-handle--sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
+.resize-handle--w { top: 50%; margin-top: -4px; left: -4px; cursor: ew-resize; }
+
+#screenpad.scheme-1 .resize-handle,
+#screenpad.scheme-2 .resize-handle {
+	background: #f80;
+	border-color: #420;
+}
+
+/* Grid overlay */
+#grid-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 0;
+	display: none;
+}
+
+#grid-overlay.visible {
+	display: block;
+}
+
+/* Preview mode */
+body.preview-mode #header,
+body.preview-mode #toolbar,
+body.preview-mode #editor,
+body.preview-mode #footer {
+	display: none !important;
+}
+
+body.preview-mode #editor-container {
+	margin: 0;
+	box-shadow: none;
+	background: transparent;
+}
+
+body.preview-mode #gamepad-container {
+	border: none;
+	margin: 0;
+}
+
+body.preview-mode {
+	background-color: #000;
+}
+
+/* Alignment tools */
+#alignment-tools {
+	display: none;
+	margin-top: 4px;
+}
+
+#alignment-tools.visible {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+}
+
+#alignment-tools button {
+	min-width: 0;
+	width: 2.5em;
+	padding: 4px;
+}
+
+/* Grid controls */
+#grid-controls {
+	display: inline-block;
+	margin-left: 1vw;
+}
+
+#grid-controls input[type=number] {
+	width: 5em;
+}
+
+/* Touch/mobile improvements */
+@media (pointer: coarse) {
+	.resize-handle {
+		width: 20px;
+		height: 20px;
+	}
+
+	.resize-handle--nw { top: -10px; left: -10px; }
+	.resize-handle--n { top: -10px; margin-left: -10px; }
+	.resize-handle--ne { top: -10px; right: -10px; }
+	.resize-handle--e { margin-top: -10px; right: -10px; }
+	.resize-handle--se { bottom: -10px; right: -10px; }
+	.resize-handle--s { bottom: -10px; margin-left: -10px; }
+	.resize-handle--sw { bottom: -10px; left: -10px; }
+	.resize-handle--w { margin-top: -10px; left: -10px; }
+
+	button {
+		min-height: 44px;
+	}
+}
+
+@media (max-width: 768px) {
+	#toolbar {
+		flex-basis: 100%;
+		order: 2;
+	}
+
+	.toolbar-group {
+		width: 100%;
+	}
+
+	#editor-container {
+		order: 1;
+	}
+}

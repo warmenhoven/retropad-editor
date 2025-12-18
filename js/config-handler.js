@@ -633,6 +633,148 @@ function ConfigHandler() {
 	}
 
 
+	// Button Duplication
+	this.duplicateCurrentButton = function (offsetX, offsetY) {
+		if (_currentLine === -1) return false;
+
+		offsetX = offsetX || 0.02;
+		offsetY = offsetY || 0.02;
+
+		const params = this.getCurrentButtonParams();
+		const x = Number(this.getCurrentLineSectionValue('x')) + offsetX;
+		const y = Number(this.getCurrentLineSectionValue('y')) + offsetY;
+
+		this.createButton(params.command, params.shape, params.image, params.addLines);
+
+		// Adjust position of new button (createButton sets _currentLine to new button)
+		this.setCurrentLineSectionValue('x', x.toFixed(10));
+		this.setCurrentLineSectionValue('y', y.toFixed(10));
+
+		return true;
+	};
+
+
+	this.duplicateSelectedButtons = function (offsetX, offsetY) {
+		if (selectedButtonLineIndexes.length === 0) return false;
+
+		offsetX = offsetX || 0.02;
+		offsetY = offsetY || 0.02;
+
+		const originalIndexes = [...selectedButtonLineIndexes];
+
+		originalIndexes.forEach(idx => {
+			_currentLine = idx;
+			this.duplicateCurrentButton(offsetX, offsetY);
+		});
+
+		return true;
+	};
+
+
+	// Batch Editing for Multi-Selection
+	this.setSelectionCommand = function (command) {
+		selectedButtonLineIndexes.forEach(idx => {
+			_strings[idx] = _editParamSection(_strings[idx], 'command', command);
+		});
+	};
+
+
+	this.setSelectionShape = function (shape) {
+		selectedButtonLineIndexes.forEach(idx => {
+			_strings[idx] = _editParamSection(_strings[idx], 'shape', shape);
+		});
+	};
+
+
+	this.setSelectionImage = function (image) {
+		selectedButtonLineIndexes.forEach(idx => {
+			const param = _isOverlayXX_descYY(_strings[idx]);
+			if (!param) return;
+
+			// Remove existing overlay line if any
+			const reg = new RegExp('^' + param + '_overlay');
+			for (let i = _strings.length - 1; i >= 0; i--) {
+				if (_strings[i].trim().search(reg) === 0) {
+					_strings.splice(i, 1);
+				}
+			}
+
+			// Add new one if image specified
+			if (image) {
+				const insertIdx = _getParamIndex(param);
+				if (insertIdx >= 0) {
+					if (image.search(/\s/) === -1)
+						_strings.splice(insertIdx + 1, 0, `${param}_overlay = ${image}`);
+					else
+						_strings.splice(insertIdx + 1, 0, `${param}_overlay = "${image}"`);
+				}
+			}
+		});
+	};
+
+
+	// Alignment and Distribution
+	this.alignSelection = function (alignment) {
+		if (selectedButtonLineIndexes.length < 2) return;
+
+		const bounds = this.getSelectionDimensions();
+		if (!bounds) return;
+
+		selectedButtonLineIndexes.forEach(idx => {
+			const x = Number(_getParamSectionValue(_strings[idx], 'x'));
+			const y = Number(_getParamSectionValue(_strings[idx], 'y'));
+			const w = Number(_getParamSectionValue(_strings[idx], 'w'));
+			const h = Number(_getParamSectionValue(_strings[idx], 'h'));
+
+			let newX = x, newY = y;
+
+			switch (alignment) {
+				case 'left':
+					newX = bounds.x - bounds.w + w;
+					break;
+				case 'right':
+					newX = bounds.x + bounds.w - w;
+					break;
+				case 'centerX':
+					newX = bounds.x;
+					break;
+				case 'top':
+					newY = bounds.y - bounds.h + h;
+					break;
+				case 'bottom':
+					newY = bounds.y + bounds.h - h;
+					break;
+				case 'centerY':
+					newY = bounds.y;
+					break;
+			}
+
+			_strings[idx] = _editParamSection(_strings[idx], 'x', newX.toFixed(10));
+			_strings[idx] = _editParamSection(_strings[idx], 'y', newY.toFixed(10));
+		});
+	};
+
+
+	this.distributeSelection = function (axis) {
+		if (selectedButtonLineIndexes.length < 3) return;
+
+		// Get positions and sort
+		const items = selectedButtonLineIndexes.map(idx => ({
+			idx,
+			pos: Number(_getParamSectionValue(_strings[idx], axis))
+		})).sort((a, b) => a.pos - b.pos);
+
+		const first = items[0].pos;
+		const last = items[items.length - 1].pos;
+		const step = (last - first) / (items.length - 1);
+
+		items.forEach((item, i) => {
+			const newPos = first + (step * i);
+			_strings[item.idx] = _editParamSection(_strings[item.idx], axis, newPos.toFixed(10));
+		});
+	};
+
+
 	//PRIVATE
 
 	function _cleanUp() {

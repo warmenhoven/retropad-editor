@@ -23,7 +23,13 @@
 
 		<div id='header'>
 			<button class='important' onclick='showFileDialog()'>Import • Export</button>
+			<select id='template-selector' onchange='loadTemplate(this.value); this.selectedIndex=0;'>
+				<option value=''>Templates...</option>
+			</select>
+			<button id='undo-btn' onclick='undoManager.undo()' disabled title='Undo (Ctrl+Z)'>Undo</button>
+			<button id='redo-btn' onclick='undoManager.redo()' disabled title='Redo (Ctrl+Y)'>Redo</button>
 			<button class='danger button--normal-size' onclick='showDialog("reset-dialog", true)'>Reset</button>
+			<button onclick='togglePreviewMode()' title='Preview mode (Esc to exit)'>Preview</button>
 			<span id='header__caption'><img src='img/retroarch-icon.svg'>RetroPad Editor</span>
 		</div>
 
@@ -57,7 +63,21 @@
 							<input type='checkbox' id='chk-show-offscreen' autocomplete='off'>
 							<label for='chk-show-offscreen'>Show offscreen</label>
 						</div>
+
+						<div class='checkbox-wrapper'>
+							<input type='checkbox' id='chk-show-grid' autocomplete='off' onchange='toggleGrid()'>
+							<label for='chk-show-grid'>Grid</label>
+						</div>
+
+						<div class='checkbox-wrapper'>
+							<input type='checkbox' id='chk-snap-grid' autocomplete='off' onchange='toggleSnap()'>
+							<label for='chk-snap-grid'>Snap</label>
+						</div>
 					</div>
+					<span id='grid-controls' class='hidden'>
+						<label for='grid-size'>Size:</label>
+						<input type='number' id='grid-size' value='0.05' min='0.01' max='0.5' step='0.01' onchange='updateGridOverlay()'>
+					</span>
 				</div>
 
 				<div class='toolbar-group'>
@@ -78,6 +98,17 @@
 							button</button>
 						<button id='show-button-editor' onclick='showButtonEditor()'>Edit
 							button</button>
+						<button onclick='duplicateSelection()' title='Duplicate selected (Ctrl+D)'>Duplicate</button>
+					</div>
+					<div id='alignment-tools'>
+						<button onclick='alignButtons("left")' title='Align left'>⇐</button>
+						<button onclick='alignButtons("centerX")' title='Align center horizontally'>⇔</button>
+						<button onclick='alignButtons("right")' title='Align right'>⇒</button>
+						<button onclick='alignButtons("top")' title='Align top'>⇑</button>
+						<button onclick='alignButtons("centerY")' title='Align center vertically'>⇕</button>
+						<button onclick='alignButtons("bottom")' title='Align bottom'>⇓</button>
+						<button onclick='distributeButtons("x")' title='Distribute horizontally'>|||</button>
+						<button onclick='distributeButtons("y")' title='Distribute vertically'>≡</button>
 					</div>
 				</div>
 			</div>
@@ -86,6 +117,7 @@
 				<div id='gamepad-container'>
 					<div id='gamepad-container__scroll-frame'>
 						<div id='screenpad' class='hide-offscreen'>
+							<div id='grid-overlay'></div>
 							<div id='game-screenshot'></div>
 						</div>
 					</div>
@@ -109,14 +141,14 @@
 						<span>W</span>
 						<input type='range' max=1 step=0.00001 id='w-range'>
 						<input type='number' step=any id='w-number'>
-						<button id='norm-width' onclick='normalizeWidth()'>Quad</button>
+						<button id='norm-width' onclick='normalizeWidth()' title='Adjust width to match height'>Square</button>
 					</div>
 
 					<div>
 						<span>H</span>
 						<input type='range' max=1 step=0.00001 id='h-range'>
 						<input type='number' step=any id='h-number'>
-						<button id='norm-height' onclick='normalizeHeight()'>Quad</button>
+						<button id='norm-height' onclick='normalizeHeight()' title='Adjust height to match width'>Square</button>
 					</div>
 				</div>
 
@@ -353,6 +385,40 @@
 				<div class='modal-dialog__content-box'>
 					<div class='dialog-content-box__section'>
 						<span class='group-header'>Screen dimensions</span>
+						<br class='wide'>
+						<select id='device-preset' onchange='applyDevicePreset()'>
+							<option value=''>Custom...</option>
+							<optgroup label='Phones (Portrait)'>
+								<option value='1170,2532'>iPhone 14/15 Pro</option>
+								<option value='1179,2556'>iPhone 14/15 Pro Max</option>
+								<option value='1080,2340'>Android 1080p</option>
+								<option value='1440,3120'>Android 1440p</option>
+							</optgroup>
+							<optgroup label='Phones (Landscape)'>
+								<option value='2532,1170'>iPhone 14/15 Pro</option>
+								<option value='2556,1179'>iPhone 14/15 Pro Max</option>
+								<option value='2340,1080'>Android 1080p</option>
+								<option value='3120,1440'>Android 1440p</option>
+							</optgroup>
+							<optgroup label='Tablets'>
+								<option value='2048,1536'>iPad (4:3)</option>
+								<option value='2388,1668'>iPad Pro 11"</option>
+								<option value='2732,2048'>iPad Pro 12.9"</option>
+								<option value='2560,1600'>Android Tablet</option>
+							</optgroup>
+							<optgroup label='Handhelds'>
+								<option value='1280,800'>Steam Deck</option>
+								<option value='1920,1080'>ROG Ally</option>
+								<option value='1280,720'>Switch (Handheld)</option>
+								<option value='1920,1080'>Switch (Docked)</option>
+							</optgroup>
+							<optgroup label='Standard'>
+								<option value='1920,1080'>1080p (16:9)</option>
+								<option value='2560,1440'>1440p (16:9)</option>
+								<option value='3840,2160'>4K (16:9)</option>
+								<option value='1600,900'>900p (16:9)</option>
+							</optgroup>
+						</select>
 						<br class='wide'>
 						<input type='number' id='display-width' step=0.00001 class='js-dialog__focus'>
 						<span>x</span>

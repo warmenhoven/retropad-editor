@@ -328,47 +328,212 @@
 		overlay3_desc14_saturate_pct = 0.65
 		overlay3_desc14_movable = true`.replace(indent, '\n');
 
-	window.buttonCommandList = `up
-		down
-		left
-		right
-		a
-		b
-		x
-		y
-		l
-		l2
-		l3
-		r
-		r2
-		r3
-		select
-		start
-		analog_left
-		analog_right
-		l_x_minus
-		l_x_plus
-		l_y_minus
-		l_y_plus
-		abxy_area
-		dpad_area
-		#
-		menu_toggle
-		overlay_next
-		load_state
-		save_state
-		state_slot_increase
-		state_slot_decrease
-		shader_next
-		shader_prev
-		rewind
-		hold_fast_forward
-		toggle_fast_forward
-		hold_slowmotion
-		toggle_slowmotion
-		audio_mute
-		pause_toggle
-		screenshot
-		reset
-		exit_emulator`.replace(indent, '\n').replace('#', '');
+	// Categorized command list for overlay buttons
+	window.buttonCommandList = {
+		'D-Pad & Face Buttons': [
+			'up', 'down', 'left', 'right',
+			'a', 'b', 'x', 'y'
+		],
+		'Shoulder Buttons': [
+			'l', 'l2', 'l3',
+			'r', 'r2', 'r3'
+		],
+		'System Buttons': [
+			'select', 'start'
+		],
+		'Analog Sticks': [
+			'analog_left', 'analog_right',
+			'l_x_minus', 'l_x_plus',
+			'l_y_minus', 'l_y_plus',
+			'r_x_minus', 'r_x_plus',
+			'r_y_minus', 'r_y_plus'
+		],
+		'Touch Areas': [
+			'dpad_area', 'abxy_area'
+		],
+		'Menu & Overlay': [
+			'menu_toggle', 'overlay_next', 'osk_toggle'
+		],
+		'State Management': [
+			'load_state', 'save_state',
+			'state_slot_increase', 'state_slot_decrease'
+		],
+		'Speed Control': [
+			'hold_fast_forward', 'toggle_fast_forward',
+			'hold_slowmotion', 'toggle_slowmotion',
+			'rewind', 'pause_toggle', 'frame_advance'
+		],
+		'Shaders': [
+			'shader_next', 'shader_prev', 'shader_toggle'
+		],
+		'Cheats': [
+			'cheat_toggle', 'cheat_index_plus', 'cheat_index_minus'
+		],
+		'Disk Control': [
+			'disk_eject_toggle', 'disk_next', 'disk_prev'
+		],
+		'Audio/Video': [
+			'audio_mute', 'volume_up', 'volume_down',
+			'screenshot', 'recording_toggle', 'streaming_toggle',
+			'grab_mouse_toggle', 'game_focus_toggle'
+		],
+		'Replay': [
+			'play_replay', 'record_replay', 'halt_replay'
+		],
+		'Netplay': [
+			'netplay_ping_toggle', 'netplay_host_toggle',
+			'netplay_game_watch', 'netplay_player_chat', 'netplay_fade_chat_toggle'
+		],
+		'Advanced': [
+			'reset', 'close_content', 'exit_emulator',
+			'fps_toggle', 'fullscreen_toggle', 'ui_companion_toggle',
+			'runahead_toggle', 'preempt_toggle',
+			'vrr_runloop_toggle', 'ai_service'
+		],
+		'Special': [
+			'null'
+		]
+	};
+
+	// Flat list for backwards compatibility
+	window.buttonCommandListFlat = Object.values(window.buttonCommandList).flat();
+
+	// Overlay templates for quick setup
+	window.overlayTemplates = {
+		'SNES (4 Face + LR)': `overlays = 1
+overlay0_name = "snes"
+overlay0_full_screen = true
+overlay0_normalized = true
+overlay0_range_mod = 1.5
+overlay0_alpha_mod = 2.0
+overlay0_aspect_ratio = 1.7777778
+overlay0_descs = 14
+overlay0_desc0 = "left,0.07,0.78,radial,0.045,0.07"
+overlay0_desc0_overlay = dpad-left.png
+overlay0_desc1 = "right,0.18,0.78,radial,0.045,0.07"
+overlay0_desc1_overlay = dpad-right.png
+overlay0_desc2 = "up,0.125,0.68,radial,0.04,0.08"
+overlay0_desc2_overlay = dpad-up.png
+overlay0_desc3 = "down,0.125,0.88,radial,0.04,0.08"
+overlay0_desc3_overlay = dpad-down.png
+overlay0_desc4 = "a,0.94,0.78,radial,0.04,0.07"
+overlay0_desc4_overlay = A.png
+overlay0_desc5 = "b,0.875,0.89,radial,0.04,0.07"
+overlay0_desc5_overlay = B.png
+overlay0_desc6 = "x,0.875,0.67,radial,0.04,0.07"
+overlay0_desc6_overlay = X.png
+overlay0_desc7 = "y,0.81,0.78,radial,0.04,0.07"
+overlay0_desc7_overlay = Y.png
+overlay0_desc8 = "start,0.55,0.92,rect,0.04,0.04"
+overlay0_desc8_overlay = start_psx.png
+overlay0_desc9 = "select,0.45,0.92,rect,0.04,0.04"
+overlay0_desc9_overlay = select_psx.png
+overlay0_desc10 = "l,0.03,0.50,rect,0.05,0.09"
+overlay0_desc10_overlay = L1.png
+overlay0_desc11 = "r,0.97,0.50,rect,0.05,0.09"
+overlay0_desc11_overlay = R1.png
+overlay0_desc12 = "menu_toggle,0.08,0.09,radial,0.026,0.046"
+overlay0_desc12_overlay = rgui.png
+overlay0_desc13 = "hold_fast_forward,0.92,0.09,radial,0.026,0.046"
+overlay0_desc13_overlay = fast_forward.png`,
+
+		'PlayStation (4 Face + L1L2R1R2)': `overlays = 1
+overlay0_name = "playstation"
+overlay0_full_screen = true
+overlay0_normalized = true
+overlay0_range_mod = 1.5
+overlay0_alpha_mod = 2.0
+overlay0_aspect_ratio = 1.7777778
+overlay0_descs = 16
+overlay0_desc0 = "left,0.07,0.78,radial,0.045,0.07"
+overlay0_desc0_overlay = dpad-left_psx.png
+overlay0_desc1 = "right,0.18,0.78,radial,0.045,0.07"
+overlay0_desc1_overlay = dpad-right_psx.png
+overlay0_desc2 = "up,0.125,0.68,radial,0.04,0.08"
+overlay0_desc2_overlay = dpad-up_psx.png
+overlay0_desc3 = "down,0.125,0.88,radial,0.04,0.08"
+overlay0_desc3_overlay = dpad-down_psx.png
+overlay0_desc4 = "a,0.94,0.78,radial,0.04,0.07"
+overlay0_desc4_overlay = circle.png
+overlay0_desc5 = "b,0.875,0.89,radial,0.04,0.07"
+overlay0_desc5_overlay = cross.png
+overlay0_desc6 = "y,0.875,0.67,radial,0.04,0.07"
+overlay0_desc6_overlay = triangle.png
+overlay0_desc7 = "x,0.81,0.78,radial,0.04,0.07"
+overlay0_desc7_overlay = square.png
+overlay0_desc8 = "start,0.55,0.92,rect,0.04,0.04"
+overlay0_desc8_overlay = start_psx.png
+overlay0_desc9 = "select,0.45,0.92,rect,0.04,0.04"
+overlay0_desc9_overlay = select_psx.png
+overlay0_desc10 = "l,0.03,0.50,rect,0.05,0.09"
+overlay0_desc10_overlay = L1.png
+overlay0_desc11 = "l2,0.03,0.30,rect,0.05,0.09"
+overlay0_desc11_overlay = L2.png
+overlay0_desc12 = "r,0.97,0.50,rect,0.05,0.09"
+overlay0_desc12_overlay = R1.png
+overlay0_desc13 = "r2,0.97,0.30,rect,0.05,0.09"
+overlay0_desc13_overlay = R2.png
+overlay0_desc14 = "menu_toggle,0.08,0.09,radial,0.026,0.046"
+overlay0_desc14_overlay = rgui.png
+overlay0_desc15 = "hold_fast_forward,0.92,0.09,radial,0.026,0.046"
+overlay0_desc15_overlay = fast_forward.png`,
+
+		'Genesis 6-Button': `overlays = 1
+overlay0_name = "genesis6"
+overlay0_full_screen = true
+overlay0_normalized = true
+overlay0_range_mod = 1.5
+overlay0_alpha_mod = 2.0
+overlay0_aspect_ratio = 1.7777778
+overlay0_descs = 12
+overlay0_desc0 = "left,0.07,0.78,radial,0.045,0.07"
+overlay0_desc0_overlay = dpad-left.png
+overlay0_desc1 = "right,0.18,0.78,radial,0.045,0.07"
+overlay0_desc1_overlay = dpad-right.png
+overlay0_desc2 = "up,0.125,0.68,radial,0.04,0.08"
+overlay0_desc2_overlay = dpad-up.png
+overlay0_desc3 = "down,0.125,0.88,radial,0.04,0.08"
+overlay0_desc3_overlay = dpad-down.png
+overlay0_desc4 = "y,0.78,0.67,radial,0.04,0.07"
+overlay0_desc4_overlay = A.png
+overlay0_desc5 = "b,0.85,0.67,radial,0.04,0.07"
+overlay0_desc5_overlay = B.png
+overlay0_desc6 = "a,0.92,0.67,radial,0.04,0.07"
+overlay0_desc6_overlay = C.png
+overlay0_desc7 = "l,0.78,0.82,radial,0.04,0.07"
+overlay0_desc7_overlay = X.png
+overlay0_desc8 = "x,0.85,0.82,radial,0.04,0.07"
+overlay0_desc8_overlay = Y.png
+overlay0_desc9 = "r,0.92,0.82,radial,0.04,0.07"
+overlay0_desc9_overlay = Z.png
+overlay0_desc10 = "start,0.5,0.92,rect,0.06,0.04"
+overlay0_desc10_overlay = start_genesis.png
+overlay0_desc11 = "menu_toggle,0.08,0.09,radial,0.026,0.046"
+overlay0_desc11_overlay = rgui.png`,
+
+		'Minimal (D-Pad + 2 Buttons)': `overlays = 1
+overlay0_name = "minimal"
+overlay0_full_screen = true
+overlay0_normalized = true
+overlay0_range_mod = 1.5
+overlay0_alpha_mod = 2.0
+overlay0_aspect_ratio = 1.7777778
+overlay0_descs = 8
+overlay0_desc0 = "left,0.07,0.78,radial,0.045,0.07"
+overlay0_desc0_overlay = dpad-left.png
+overlay0_desc1 = "right,0.18,0.78,radial,0.045,0.07"
+overlay0_desc1_overlay = dpad-right.png
+overlay0_desc2 = "up,0.125,0.68,radial,0.04,0.08"
+overlay0_desc2_overlay = dpad-up.png
+overlay0_desc3 = "down,0.125,0.88,radial,0.04,0.08"
+overlay0_desc3_overlay = dpad-down.png
+overlay0_desc4 = "a,0.92,0.78,radial,0.05,0.09"
+overlay0_desc4_overlay = A.png
+overlay0_desc5 = "b,0.82,0.88,radial,0.05,0.09"
+overlay0_desc5_overlay = B.png
+overlay0_desc6 = "start,0.5,0.92,rect,0.05,0.04"
+overlay0_desc6_overlay = start.png
+overlay0_desc7 = "menu_toggle,0.08,0.09,radial,0.026,0.046"
+overlay0_desc7_overlay = rgui.png`
+	};
 }

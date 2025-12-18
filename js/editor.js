@@ -49,20 +49,133 @@ if (defaultImagesObj) // defaults.js
 
 let userImages = [];
 
+// Undo/Redo Manager
+const undoManager = {
+	history: [],
+	future: [],
+	maxSize: 50,
+
+	pushState(description) {
+		this.history.push({
+			state: conf.getConfigString(),
+			overlay: conf.getCurrentOverlay(),
+			desc: description || 'Edit'
+		});
+		if (this.history.length > this.maxSize) this.history.shift();
+		this.future = [];
+		this.updateButtons();
+	},
+
+	undo() {
+		if (this.history.length === 0) return;
+		this.future.push({
+			state: conf.getConfigString(),
+			overlay: conf.getCurrentOverlay(),
+			desc: 'Redo point'
+		});
+		const snapshot = this.history.pop();
+		this.restoreState(snapshot);
+		this.updateButtons();
+	},
+
+	redo() {
+		if (this.future.length === 0) return;
+		this.history.push({
+			state: conf.getConfigString(),
+			overlay: conf.getCurrentOverlay(),
+			desc: 'Undo point'
+		});
+		const snapshot = this.future.pop();
+		this.restoreState(snapshot);
+		this.updateButtons();
+	},
+
+	restoreState(snapshot) {
+		conf.convertCfgToArray(snapshot.state, () => {
+			buildAndSetOverlaySelectors(snapshot.overlay);
+			setScreenDimensions();
+			redrawPad();
+		}, images);
+	},
+
+	updateButtons() {
+		const undoBtn = document.getElementById('undo-btn');
+		const redoBtn = document.getElementById('redo-btn');
+		if (undoBtn) undoBtn.disabled = this.history.length === 0;
+		if (redoBtn) redoBtn.disabled = this.future.length === 0;
+	},
+
+	clear() {
+		this.history = [];
+		this.future = [];
+		this.updateButtons();
+	}
+};
+
+// Grid settings
+let gridSettings = {
+	enabled: false,
+	snap: false,
+	size: 0.05
+};
+
+// Preview mode
+let previewMode = false;
+
+// Drag state
+let dragState = {
+	isDragging: false,
+	isResizing: false,
+	resizeHandle: null,
+	startX: 0,
+	startY: 0,
+	startRectX: 0,
+	startRectY: 0,
+	startRectW: 0,
+	startRectH: 0,
+	hasMoved: false,
+	undoPushed: false,
+	element: null,
+	lineIndex: -1,
+	// For group dragging
+	groupStartPositions: []  // [{lineIndex, x, y}]
+};
+
 fillCommandSelector(buttonCommandList);
 fillImageSelector();
+fillTemplateSelector();
 
 let conf = new ConfigHandler();
 let configStr = defaultConfigString; // defaults.js
 renderConfig(configStr);
 
+// Track slider drag state for undo
+let sliderDragStarted = false;
+
 'xywh'.split('').forEach(elem => {
 	let range = document.getElementById(elem + '-range');
 	let text = document.getElementById(elem + '-number');
 
+	// Save state when slider drag starts
+	range.addEventListener('mousedown', () => {
+		if (!sliderDragStarted) {
+			undoManager.pushState('Adjust ' + elem.toUpperCase());
+			sliderDragStarted = true;
+		}
+	});
+
+	range.addEventListener('mouseup', () => {
+		sliderDragStarted = false;
+	});
+
 	range.addEventListener('input', (e) => {
 		applyButtonParam(elem, e.target.value);
 		text.value = e.target.value;
+	});
+
+	// Save state when number input changes (on blur to avoid too many states)
+	text.addEventListener('focus', () => {
+		undoManager.pushState('Adjust ' + elem.toUpperCase());
 	});
 
 	text.addEventListener('input', (e) => {
@@ -119,7 +232,16 @@ function createPadView() {
 		if (conf.isLineInSelection(r.i))
 			b.classList.add('selected');
 
-		b.addEventListener('click', () => {
+		// Add drag/resize handlers
+		addDragHandlers(b, r.i);
+
+		b.addEventListener('click', (e) => {
+			// Don't trigger click if we were dragging
+			if (dragState.hasMoved) {
+				dragState.hasMoved = false;
+				return;
+			}
+
 			if (currentRect)
 				currentRect.classList.remove('selected');
 
@@ -136,9 +258,228 @@ function createPadView() {
 			});
 
 			enableEditor(true);
+			updateAlignmentToolsVisibility();
 			document.activeElement.blur();
 		});
 	}
+}
+
+
+function addDragHandlers(rectElement, lineIndex) {
+	rectElement.addEventListener('mousedown', (e) => {
+		if (e.button !== 0) return;
+
+		const handle = e.target.closest('.resize-handle');
+		if (handle) {
+			dragState.isResizing = true;
+			dragState.resizeHandle = handle.dataset.handle;
+		} else if (e.target === rectElement || e.target.classList.contains('saturate-indicator') || e.target.nodeType === 3) {
+			dragState.isDragging = true;
+		} else {
+			return;
+		}
+
+		dragState.startX = e.clientX;
+		dragState.startY = e.clientY;
+		dragState.element = rectElement;
+		dragState.lineIndex = lineIndex;
+		dragState.hasMoved = false;
+
+		// Check if this element is part of existing group selection
+		const isPartOfGroup = conf.isSelected(lineIndex) && conf.isGroupSelected();
+
+		if (!isPartOfGroup) {
+			// Clear selection and select just this one
+			if (currentRect)
+				currentRect.classList.remove('selected');
+			document.querySelectorAll('.rect.selected').forEach(el => el.classList.remove('selected'));
+			conf.resetGroupSelection();
+		}
+
+		currentRect = rectElement;
+		rectElement.classList.add('selected');
+		conf.setCurrentLine(lineIndex);
+		enableEditor(true);
+		updateEditorSliderValues();
+
+		dragState.startRectX = Number(conf.getCurrentLineSectionValue('x'));
+		dragState.startRectY = Number(conf.getCurrentLineSectionValue('y'));
+		dragState.startRectW = Number(conf.getCurrentLineSectionValue('w'));
+		dragState.startRectH = Number(conf.getCurrentLineSectionValue('h'));
+		dragState.undoPushed = false;
+
+		// Store group positions if dragging (not resizing) a group
+		dragState.groupStartPositions = [];
+		if (dragState.isDragging && isPartOfGroup) {
+			conf.getSelectedIndexes().forEach(idx => {
+				conf.setCurrentLine(idx);
+				dragState.groupStartPositions.push({
+					lineIndex: idx,
+					x: Number(conf.getCurrentLineSectionValue('x')),
+					y: Number(conf.getCurrentLineSectionValue('y'))
+				});
+			});
+			conf.setCurrentLine(lineIndex);  // Reset to dragged element
+		}
+
+		e.stopPropagation();
+		e.preventDefault();
+	});
+
+	// Touch support
+	rectElement.addEventListener('touchstart', (e) => {
+		if (e.touches.length !== 1) return;
+
+		const touch = e.touches[0];
+		const handle = e.target.closest('.resize-handle');
+
+		if (handle) {
+			dragState.isResizing = true;
+			dragState.resizeHandle = handle.dataset.handle;
+		} else {
+			dragState.isDragging = true;
+		}
+
+		dragState.startX = touch.clientX;
+		dragState.startY = touch.clientY;
+		dragState.element = rectElement;
+		dragState.lineIndex = lineIndex;
+		dragState.hasMoved = false;
+
+		// Check if this element is part of existing group selection
+		const isPartOfGroup = conf.isSelected(lineIndex) && conf.isGroupSelected();
+
+		if (!isPartOfGroup) {
+			// Clear selection and select just this one
+			if (currentRect)
+				currentRect.classList.remove('selected');
+			document.querySelectorAll('.rect.selected').forEach(el => el.classList.remove('selected'));
+			conf.resetGroupSelection();
+		}
+
+		currentRect = rectElement;
+		rectElement.classList.add('selected');
+		conf.setCurrentLine(lineIndex);
+		enableEditor(true);
+		updateEditorSliderValues();
+
+		dragState.startRectX = Number(conf.getCurrentLineSectionValue('x'));
+		dragState.startRectY = Number(conf.getCurrentLineSectionValue('y'));
+		dragState.startRectW = Number(conf.getCurrentLineSectionValue('w'));
+		dragState.startRectH = Number(conf.getCurrentLineSectionValue('h'));
+		dragState.undoPushed = false;
+
+		// Store group positions if dragging (not resizing) a group
+		dragState.groupStartPositions = [];
+		if (dragState.isDragging && isPartOfGroup) {
+			conf.getSelectedIndexes().forEach(idx => {
+				conf.setCurrentLine(idx);
+				dragState.groupStartPositions.push({
+					lineIndex: idx,
+					x: Number(conf.getCurrentLineSectionValue('x')),
+					y: Number(conf.getCurrentLineSectionValue('y'))
+				});
+			});
+			conf.setCurrentLine(lineIndex);  // Reset to dragged element
+		}
+
+		e.preventDefault();
+	}, { passive: false });
+}
+
+
+// Global mouse/touch move handler for dragging
+document.addEventListener('mousemove', handleDragMove);
+document.addEventListener('touchmove', (e) => {
+	if (e.touches.length === 1 && (dragState.isDragging || dragState.isResizing)) {
+		e.preventDefault();
+		handleDragMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+	}
+}, { passive: false });
+
+function handleDragMove(e) {
+	if (!dragState.isDragging && !dragState.isResizing) return;
+
+	const container = document.querySelector('.screenpad-background');
+	if (!container) return;
+
+	const rect = container.getBoundingClientRect();
+	const dx = (e.clientX - dragState.startX) / rect.width;
+	const dy = (e.clientY - dragState.startY) / rect.height;
+
+	if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+		if (!dragState.hasMoved && !dragState.undoPushed) {
+			undoManager.pushState('Move/Resize');
+			dragState.undoPushed = true;
+		}
+		dragState.hasMoved = true;
+	}
+
+	conf.setCurrentLine(dragState.lineIndex);
+
+	if (dragState.isDragging) {
+		// Move all group elements if we have a group
+		if (dragState.groupStartPositions.length > 0) {
+			dragState.groupStartPositions.forEach(item => {
+				conf.setCurrentLine(item.lineIndex);
+				let newX = snapToGrid(item.x + dx);
+				let newY = snapToGrid(item.y + dy);
+				conf.setCurrentLineSectionValue('x', newX.toFixed(10));
+				conf.setCurrentLineSectionValue('y', newY.toFixed(10));
+				// Update visual for this element
+				updateRectVisual(item.lineIndex);
+			});
+			conf.setCurrentLine(dragState.lineIndex);  // Reset to primary element
+		} else {
+			let newX = snapToGrid(dragState.startRectX + dx);
+			let newY = snapToGrid(dragState.startRectY + dy);
+			conf.setCurrentLineSectionValue('x', newX.toFixed(10));
+			conf.setCurrentLineSectionValue('y', newY.toFixed(10));
+		}
+	} else if (dragState.isResizing) {
+		handleResize(dragState.resizeHandle, dx, dy);
+	}
+
+	updateCurrentLine();
+	updateEditorSliderValues();
+}
+
+function handleResize(handle, dx, dy) {
+	let newX = dragState.startRectX;
+	let newY = dragState.startRectY;
+	let newW = dragState.startRectW;
+	let newH = dragState.startRectH;
+
+	// Resize based on handle position
+	if (handle.includes('e')) { newW = dragState.startRectW + dx / 2; }
+	if (handle.includes('w')) { newW = dragState.startRectW - dx / 2; newX = dragState.startRectX + dx / 2; }
+	if (handle.includes('s')) { newH = dragState.startRectH + dy / 2; }
+	if (handle.includes('n')) { newH = dragState.startRectH - dy / 2; newY = dragState.startRectY + dy / 2; }
+
+	// Enforce minimum size
+	newW = Math.max(0.005, newW);
+	newH = Math.max(0.005, newH);
+
+	// Apply snapping
+	newX = snapToGrid(newX);
+	newY = snapToGrid(newY);
+	newW = snapToGrid(newW);
+	newH = snapToGrid(newH);
+
+	conf.setCurrentLineSectionValue('x', newX.toFixed(10));
+	conf.setCurrentLineSectionValue('y', newY.toFixed(10));
+	conf.setCurrentLineSectionValue('w', newW.toFixed(10));
+	conf.setCurrentLineSectionValue('h', newH.toFixed(10));
+}
+
+// Global mouse/touch up handler
+document.addEventListener('mouseup', handleDragEnd);
+document.addEventListener('touchend', handleDragEnd);
+
+function handleDragEnd() {
+	dragState.isDragging = false;
+	dragState.isResizing = false;
+	dragState.element = null;
 }
 
 
@@ -468,10 +809,20 @@ function createRect(target, name, x, y, w, h, pct) {
 	if (pct) {
 		// visualize thumbstick saturate_pct property
 		let inner = document.createElement('DIV');
+		inner.className = 'saturate-indicator';
 		let perc = Math.round(pct * 70);
 		inner.style['background-image'] = 'radial-gradient(transparent, rgba(100,100,200,0.4) ' + perc + '%, transparent ' + (perc + 1) + '%)';
 		rect.appendChild(inner);
 	}
+
+	// Add resize handles
+	const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+	handles.forEach(pos => {
+		const handle = document.createElement('div');
+		handle.className = `resize-handle resize-handle--${pos}`;
+		handle.dataset.handle = pos;
+		rect.appendChild(handle);
+	});
 
 	let bw = 100 * w * 2;
 	let bh = 100 * h * 2;
@@ -644,6 +995,25 @@ function updateCurrentLine(section, value) {
 }
 
 
+// Update visual position of a rect element by line index
+function updateRectVisual(lineIndex) {
+	const rectEl = document.querySelector(`.rect[data-line-index="${lineIndex}"]`);
+	if (!rectEl) return;
+
+	conf.setCurrentLine(lineIndex);
+
+	let rw = 100 * conf.getCurrentLineSectionValue('w') * 2;
+	let rh = 100 * conf.getCurrentLineSectionValue('h') * 2;
+	let rx = 100 * conf.getCurrentLineSectionValue('x') - rw / 2;
+	let ry = 100 * conf.getCurrentLineSectionValue('y') - rh / 2;
+
+	rectEl.style.height = rh + '%';
+	rectEl.style.width = rw + '%';
+	rectEl.style.left = rx + '%';
+	rectEl.style.top = ry + '%';
+}
+
+
 function buildAndSetOverlaySelectors(selectIndex) {
 	let list = conf.getOverlayList();
 
@@ -722,6 +1092,19 @@ function fillImageSelector() {
 }
 
 
+function fillTemplateSelector() {
+	let selector = document.getElementById('template-selector');
+	if (!selector || !overlayTemplates) return;
+
+	for (let name of Object.keys(overlayTemplates)) {
+		let o = document.createElement('OPTION');
+		o.value = name;
+		o.appendChild(document.createTextNode(name));
+		selector.appendChild(o);
+	}
+}
+
+
 function setImageSelectorOption(value) {
 	let s = document.getElementById('image-select');
 	s.value = '';
@@ -736,14 +1119,31 @@ function setImageSelectorOption(value) {
 
 
 function fillCommandSelector(commands) {
-	commands = commands.split('\n');
 	let s = document.getElementById('command-select');
 
-	commands.forEach((e) => {
-		let o = document.createElement('OPTION');
-		o.appendChild(document.createTextNode(e));
-		s.appendChild(o);
-	})
+	// Handle categorized object format
+	if (typeof commands === 'object' && !Array.isArray(commands)) {
+		for (const [category, cmds] of Object.entries(commands)) {
+			let optgroup = document.createElement('OPTGROUP');
+			optgroup.label = category;
+			cmds.forEach((cmd) => {
+				let o = document.createElement('OPTION');
+				o.appendChild(document.createTextNode(cmd));
+				optgroup.appendChild(o);
+			});
+			s.appendChild(optgroup);
+		}
+	} else {
+		// Legacy flat list support
+		if (typeof commands === 'string') {
+			commands = commands.split('\n');
+		}
+		commands.forEach((e) => {
+			let o = document.createElement('OPTION');
+			o.appendChild(document.createTextNode(e));
+			s.appendChild(o);
+		});
+	}
 }
 
 
@@ -979,6 +1379,7 @@ function calculateScreenSizeToFit(width, height) {
 function resetPad() {
 	showDialog('reset-dialog', false);
 	renderConfig(configStr);
+	undoManager.clear();
 }
 
 
@@ -1003,6 +1404,7 @@ function toggleNames(event) {
 
 
 function flipXcoord() {
+	undoManager.pushState('Flip X');
 	let x = conf.flipXcoord()
 	document.getElementById('x-range').value = x;
 	document.getElementById('x-number').value = x;
@@ -1012,6 +1414,7 @@ function flipXcoord() {
 
 
 function normalizeHeight() {
+	undoManager.pushState('Make Square');
 	let h = conf.normalizeHeight(screen.width, screen.height)
 	document.getElementById('h-range').value = h;
 	document.getElementById('h-number').value = h;
@@ -1021,6 +1424,7 @@ function normalizeHeight() {
 
 
 function normalizeWidth() {
+	undoManager.pushState('Make Square');
 	let w = conf.normalizeWidth(screen.width, screen.height)
 	document.getElementById('w-range').value = w;
 	document.getElementById('w-number').value = w;
@@ -1030,6 +1434,7 @@ function normalizeWidth() {
 
 
 function fixAspect() {
+	undoManager.pushState('Fix Aspect Ratio');
 	let iw = document.getElementById('initial-aspect-width').value;
 	let ih = document.getElementById('initial-aspect-height').value;
 
@@ -1075,6 +1480,7 @@ function addButton() {
 	if (d.warn)
 		return;
 
+	undoManager.pushState('Add Button');
 	hideButtonEditor();
 	conf.createButton(d.command, d.shape, d.image, d.lines);
 	redrawPad();
@@ -1086,9 +1492,24 @@ function editButton() {
 	if (d.warn)
 		return;
 
+	undoManager.pushState('Edit Button');
 	hideButtonEditor();
-	conf.updateCurrentButton(d.command, d.shape, d.image, d.lines);
-	conf.setCurrentLine(-1);
+
+	// Handle batch edit mode for multi-selection
+	if (conf.isGroupSelected()) {
+		const command = document.getElementById('command-name').value.trim();
+		const image = document.getElementById('image-name').value;
+		const shapeSelect = document.getElementById('button-shape');
+
+		if (command) conf.setSelectionCommand(command);
+		if (image) conf.setSelectionImage(image);
+		if (shapeSelect.selectedIndex >= 0) {
+			conf.setSelectionShape(['rect', 'radial'][shapeSelect.selectedIndex]);
+		}
+	} else {
+		conf.updateCurrentButton(d.command, d.shape, d.image, d.lines);
+		conf.setCurrentLine(-1);
+	}
 	redrawPad();
 }
 
@@ -1108,6 +1529,7 @@ function addOverlay() {
 		return;
 	}
 
+	undoManager.pushState('Add Overlay');
 	if (document.getElementById('chk-duplicate-overlay').checked)
 		conf.duplicateCurrentOverlay(name, props);
 	else
@@ -1134,6 +1556,7 @@ function editOverlay() {
 		return;
 	}
 
+	undoManager.pushState('Edit Overlay');
 	conf.editCurrentOverlay(name, processRawProperties(raw));
 
 	hideOverlayEditor();
@@ -1146,6 +1569,7 @@ function editOverlay() {
 function delCurrentButton() {
 	showDialog('button-delete-dialog', false);
 
+	undoManager.pushState('Delete Button');
 	if (!conf.deleteCurrentButton())
 		alert('No selection!');
 	redrawPad();
@@ -1155,6 +1579,7 @@ function delCurrentButton() {
 function delCurrentOverlay() {
 	showDialog('overlay-delete-dialog', false);
 
+	undoManager.pushState('Delete Overlay');
 	conf.deleteCurrentOverlay();
 	buildAndSetOverlaySelectors(0);
 	setScreenDimensions();
@@ -1448,3 +1873,270 @@ function setColorScheme(index) {
 	if (index > 0)
 		screenpad.classList.add('scheme-' + index);
 }
+
+
+// ==================== NEW FEATURES ====================
+
+// Keyboard Shortcuts
+function initKeyboardShortcuts() {
+	document.addEventListener('keydown', (e) => {
+		// Skip if typing in input/textarea
+		if (e.target.matches('input, textarea, select')) return;
+
+		const ctrlOrMeta = e.ctrlKey || e.metaKey;
+
+		// Undo/Redo
+		if (ctrlOrMeta && e.key === 'z' && !e.shiftKey) {
+			e.preventDefault();
+			undoManager.undo();
+			return;
+		}
+		if (ctrlOrMeta && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+			e.preventDefault();
+			undoManager.redo();
+			return;
+		}
+
+		// Delete
+		if (e.key === 'Delete' || e.key === 'Backspace') {
+			if (currentRect || conf.isGroupSelected()) {
+				e.preventDefault();
+				showDialog('button-delete-dialog', true);
+			}
+			return;
+		}
+
+		// Duplicate
+		if (ctrlOrMeta && e.key === 'd') {
+			e.preventDefault();
+			duplicateSelection();
+			return;
+		}
+
+		// Select All
+		if (ctrlOrMeta && e.key === 'a') {
+			e.preventDefault();
+			selectAllButtons();
+			return;
+		}
+
+		// Arrow keys for nudging
+		const nudgeAmount = e.shiftKey ? 0.01 : 0.001;
+		switch (e.key) {
+			case 'ArrowUp':
+				e.preventDefault();
+				nudgeSelection(0, -nudgeAmount);
+				break;
+			case 'ArrowDown':
+				e.preventDefault();
+				nudgeSelection(0, nudgeAmount);
+				break;
+			case 'ArrowLeft':
+				e.preventDefault();
+				nudgeSelection(-nudgeAmount, 0);
+				break;
+			case 'ArrowRight':
+				e.preventDefault();
+				nudgeSelection(nudgeAmount, 0);
+				break;
+			case 'Escape':
+				if (previewMode) {
+					togglePreviewMode();
+				} else {
+					deselectAll();
+					enableEditor(false);
+				}
+				break;
+		}
+	});
+}
+
+function nudgeSelection(dx, dy) {
+	if (!currentRect && !conf.isGroupSelected()) return;
+
+	undoManager.pushState('Nudge');
+
+	if (conf.isGroupSelected()) {
+		const indexes = conf.getSelectedIndexes();
+		indexes.forEach(i => {
+			conf.setCurrentLine(i);
+			const x = Number(conf.getCurrentLineSectionValue('x')) + dx;
+			const y = Number(conf.getCurrentLineSectionValue('y')) + dy;
+			conf.setCurrentLineSectionValue('x', x.toFixed(10));
+			conf.setCurrentLineSectionValue('y', y.toFixed(10));
+		});
+		syncSelectedButtons();
+	} else if (currentRect) {
+		const x = Number(conf.getCurrentLineSectionValue('x')) + dx;
+		const y = Number(conf.getCurrentLineSectionValue('y')) + dy;
+		conf.setCurrentLineSectionValue('x', x.toFixed(10));
+		conf.setCurrentLineSectionValue('y', y.toFixed(10));
+		updateEditorSliderValues();
+		updateCurrentLine();
+	}
+}
+
+function selectAllButtons() {
+	conf.selectButtonsInBounds(0, 0, 1, 1);
+	const indexes = conf.getSelectedIndexes();
+
+	// Update visual selection
+	let rects = document.querySelectorAll('.rect');
+	rects.forEach(e => e.classList.remove('selected'));
+	indexes.forEach(idx => {
+		let elem = document.querySelectorAll('.rect[data-line-index="' + idx + '"]');
+		if (elem[0]) elem[0].classList.add('selected');
+	});
+
+	setEditorControls();
+}
+
+function updateEditorSliderValues() {
+	'xywh'.split('').forEach(elem => {
+		const val = conf.getCurrentLineSectionValue(elem);
+		document.getElementById(elem + '-range').value = val;
+		document.getElementById(elem + '-number').value = val;
+	});
+}
+
+// Button Duplication
+function duplicateSelection() {
+	if (!currentRect && !conf.isGroupSelected()) return;
+
+	undoManager.pushState('Duplicate');
+
+	if (conf.isGroupSelected()) {
+		conf.duplicateSelectedButtons(0.02, 0.02);
+	} else if (currentRect) {
+		conf.duplicateCurrentButton(0.02, 0.02);
+	}
+
+	redrawPad();
+}
+
+// Alignment Tools
+function alignButtons(alignment) {
+	if (!conf.isGroupSelected()) return;
+	undoManager.pushState('Align ' + alignment);
+	conf.alignSelection(alignment);
+	syncSelectedButtons();
+	redrawPad();
+}
+
+function distributeButtons(axis) {
+	if (!conf.isGroupSelected()) return;
+	undoManager.pushState('Distribute');
+	conf.distributeSelection(axis);
+	syncSelectedButtons();
+	redrawPad();
+}
+
+// Grid and Snap
+function toggleGrid() {
+	gridSettings.enabled = !gridSettings.enabled;
+	document.getElementById('chk-show-grid').checked = gridSettings.enabled;
+	const controls = document.getElementById('grid-controls');
+	if (controls) {
+		controls.classList.toggle('hidden', !gridSettings.enabled);
+	}
+	updateGridOverlay();
+}
+
+function toggleSnap() {
+	gridSettings.snap = !gridSettings.snap;
+	document.getElementById('chk-snap-grid').checked = gridSettings.snap;
+}
+
+function setGridSize(size) {
+	gridSettings.size = Number(size) || 0.05;
+	updateGridOverlay();
+}
+
+function updateGridOverlay() {
+	let overlay = document.getElementById('grid-overlay');
+	const container = document.querySelector('.screenpad-background');
+
+	if (!container) return;
+
+	if (!overlay) {
+		overlay = document.createElement('div');
+		overlay.id = 'grid-overlay';
+		container.appendChild(overlay);
+	}
+
+	if (gridSettings.enabled) {
+		overlay.style.display = 'block';
+		const pct = gridSettings.size * 100;
+		overlay.style.backgroundSize = `${pct}% ${pct}%`;
+	} else {
+		overlay.style.display = 'none';
+	}
+}
+
+function snapToGrid(value) {
+	if (!gridSettings.snap) return value;
+	return Math.round(value / gridSettings.size) * gridSettings.size;
+}
+
+// Preview Mode
+function togglePreviewMode() {
+	previewMode = !previewMode;
+	document.body.classList.toggle('preview-mode', previewMode);
+
+	if (previewMode) {
+		previewModeEnteredAt = Date.now();
+		screen.scale = 1;
+		setScreenDimensions();
+		redrawPad();
+	}
+}
+
+// Exit preview mode on click/tap (for touch devices without keyboard)
+let previewModeEnteredAt = 0;
+
+document.addEventListener('click', (e) => {
+	if (previewMode && Date.now() - previewModeEnteredAt > 300) {
+		togglePreviewMode();
+		e.preventDefault();
+	}
+});
+
+document.addEventListener('touchend', (e) => {
+	if (previewMode && e.touches.length === 0 && Date.now() - previewModeEnteredAt > 300) {
+		togglePreviewMode();
+		e.preventDefault();
+	}
+}, { passive: false });
+
+// Device Presets
+function applyDevicePreset() {
+	const preset = document.getElementById('device-preset').value;
+	if (!preset) return;
+
+	const [w, h] = preset.split(',');
+	document.getElementById('display-width').value = w;
+	document.getElementById('display-height').value = h;
+}
+
+// Templates
+function loadTemplate(name) {
+	if (!overlayTemplates || !overlayTemplates[name]) return;
+
+	if (confirm('Load template? This will replace current configuration.')) {
+		undoManager.pushState('Load template');
+		configStr = overlayTemplates[name];
+		renderConfig(configStr);
+		undoManager.clear();
+	}
+}
+
+// Update alignment tools visibility based on selection
+function updateAlignmentToolsVisibility() {
+	const tools = document.getElementById('alignment-tools');
+	if (tools) {
+		tools.classList.toggle('visible', conf.isGroupSelected());
+	}
+}
+
+// Initialize keyboard shortcuts on load
+initKeyboardShortcuts();
